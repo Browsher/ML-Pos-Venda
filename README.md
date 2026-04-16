@@ -1,95 +1,85 @@
-# ML Pós-Venda Bot
+# ML Pós-Venda
 
-Sistema automatizado de resposta a perguntas e mensagens de pós-venda no **Mercado Livre**, com aprendizado contínuo via Telegram.
+Sistema automatizado para lojas no **Mercado Livre** com dois subsistemas rodando em um único serviço:
+
+- **Pós-venda** — responde perguntas e mensagens de compradores com supervisão via Telegram
+- **Follow-up** — envia mensagens automáticas em cada etapa do pedido (compra, envio, entrega)
 
 ---
 
 ## Como funciona
 
+### Pós-venda
+
 ```
-Comprador faz pergunta no ML
+Comprador faz pergunta ou envia mensagem no ML
         ↓
-Sistema classifica a intenção
+Claude analisa a intenção e gera uma resposta
         ↓
-Claude gera uma sugestão de resposta
-        ↓
-Você recebe no Telegram e decide
+Confiança >= 75% → posta automaticamente no ML
+Confiança < 75%  → você recebe no Telegram
         ↓
 Você responde com /r <id> <texto>
         ↓
-Formatador polida: saudação + horário + texto profissional
+Formatador aplica: saudação + horário + polimento
         ↓
-Resposta postada no ML + salva na memória
-        ↓
-Com o tempo, o sistema aprende e ganha autonomia
+Resposta postada no ML e salva na memória
 ```
+
+### Follow-up automático
+
+```
+Venda confirmada  → "Olá João! Seu pedido foi confirmado..."
+Produto enviado   → "Seu pedido foi enviado! Acompanhe pelo ML..."
+Produto entregue  → "Chegou tudo certo? Qualquer dúvida é só chamar!"
+```
+
+Mensagens geradas pelo Claude com base nos templates em `templates/`.
+
+---
+
+## Comandos Telegram
+
+| Comando | O que faz |
+|---------|-----------|
+| `/r <id> <resposta>` | Responde uma pergunta ou mensagem pendente no ML |
+| `/listar` | Lista todas as pendentes com o comando pronto |
+| `/status` | Resumo de pendentes e tamanho da base de conhecimento |
+| `/cancelar <id>` | Remove uma pendente sem responder |
+| `/comandos` | Mostra esta lista |
+
+Apenas o seu chat_id configurado pode usar o bot.
 
 ---
 
 ## Agentes
 
+### Pós-venda
+
 | Agente | Função |
 |--------|--------|
-| **Monitor** | Busca perguntas e mensagens novas via API ML |
-| **Analisador** | Classifica a intenção do comprador |
-| **Especialista** | Carrega contexto da base de conhecimento |
-| **Respondedor** | Gera sugestão de resposta com IA |
-| **Escalador** | Envia para você via Telegram |
-| **Formatador** | Polida a resposta antes de postar no ML |
-| **Orquestrador** | Coordena tudo em loop contínuo |
+| **Orquestrador** | Coordena o fluxo de perguntas e mensagens |
+| **Monitor** | Busca perguntas novas via API ML |
+| **Analisador** | Classifica a intenção com Claude |
+| **Especialista** | Carrega a base de conhecimento relevante |
+| **Respondedor** | Gera e posta resposta automática |
+| **Escalador** | Notifica você via Telegram |
+| **TelegramListener** | Recebe e processa seus comandos |
+| **Formatador** | Polida a resposta antes de postar |
 
----
+### Follow-up
 
-## Fluxo de aprendizado
-
-Toda resposta aprovada por você é salva em `base_conhecimento/memoria.json`.
-Com o tempo, o Claude usa esses exemplos para responder com mais confiança.
-Quando a confiança atingir o limiar configurado, ele responde sozinho.
-
-```
-Início: CONFIANCA_MINIMA=1.0 → tudo vai pro Telegram
-Com experiência: CONFIANCA_MINIMA=0.75 → responde 75%+ sozinho
-```
-
----
-
-## Respondendo via Telegram
-
-Quando chegar uma pergunta, você receberá:
-
-```
-❓ Pergunta aguardando sua resposta
-
-Comprador: "A câmera funciona sem fio?"
-
-Sugestão do Claude (60% confiança):
-Sim, a câmera possui conectividade WiFi...
-
-Para responder, envie:
-/r q123 sua resposta aqui
-```
-
-Responda com:
-```
-/r q123 sim funciona via wifi configura pelo app
-```
-
-O Formatador transforma automaticamente em:
-```
-Boa tarde, João! Sim, a câmera funciona via WiFi. Configure pelo aplicativo.
-```
-
-Regras do Formatador:
-- Adiciona saudação com nome do comprador e horário do dia
-- Reformula para linguagem profissional e cordial
-- **Nunca inventa informações** — usa apenas o que você escreveu
-- **Nunca remove** o que você escreveu
+| Agente | Função |
+|--------|--------|
+| **Enviador** | Processa eventos de compra, envio e entrega |
+| **Gerador** | Gera mensagens personalizadas com Claude |
+| **Enviados** | Evita enviar a mesma mensagem duas vezes |
 
 ---
 
 ## Base de conhecimento
 
-Em `base_conhecimento/` ficam os arquivos que o Claude usa como referência:
+Edite os arquivos em `base_conhecimento/` antes de ir para produção:
 
 | Arquivo | Conteúdo |
 |---------|----------|
@@ -97,52 +87,59 @@ Em `base_conhecimento/` ficam os arquivos que o Claude usa como referência:
 | `faq.md` | Perguntas frequentes |
 | `garantia.md` | Política de garantia e devolução |
 | `instalacao.md` | Guia de instalação |
-| `memoria.json` | Respostas aprovadas (gerado automaticamente) |
+
+E os templates em `templates/` para personalizar as mensagens de follow-up:
+
+| Arquivo | Quando é usado |
+|---------|----------------|
+| `compra.md` | Pedido confirmado |
+| `envio.md` | Produto enviado |
+| `entrega.md` | Produto entregue |
 
 ---
 
 ## Configuração
 
 ### 1. Clone o repositório
+
 ```bash
 git clone https://github.com/Browsher/ML-Pos-Venda.git
 cd ML-Pos-Venda
 ```
 
-### 2. Configure as variáveis de ambiente
-```bash
-cp .env.example .env
-```
+### 2. Instale as dependências
 
-Preencha o `.env`:
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-ML_CLIENT_ID=
-ML_CLIENT_SECRET=
-ML_ACCESS_TOKEN=     # gerado pelo auth_ml.py
-ML_SELLER_ID=        # gerado pelo auth_ml.py
-TELEGRAM_BOT_TOKEN=  # gerado pelo @BotFather
-TELEGRAM_CHAT_ID=    # gerado pelo @myidbot
-CONFIANCA_MINIMA=1.0
-POLLING_INTERVAL_SEGUNDOS=60
-```
-
-### 3. Autenticação Mercado Livre
-```bash
-uv run python auth_ml.py
-```
-
-### 4. Instale as dependências
 ```bash
 uv sync
 ```
 
-### 5. Rode os testes
+### 3. Configure as variáveis de ambiente
+
+Crie um `.env` na raiz:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+
+ML_CLIENT_ID=
+ML_CLIENT_SECRET=
+ML_REFRESH_TOKEN=
+ML_SELLER_ID=
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+CONFIANCA_MINIMA=0.75
+POLLING_INTERVAL_SEGUNDOS=60
+```
+
+### 4. Rode os testes
+
 ```bash
 uv run python -m pytest tests/ -v
 ```
 
-### 6. Inicie o servidor
+### 5. Inicie o servidor
+
 ```bash
 uv run python main.py
 ```
@@ -151,19 +148,28 @@ uv run python main.py
 
 ## Deploy (Railway)
 
-1. Faça fork deste repositório
-2. Crie um projeto no [Railway](https://railway.app) conectando o fork
-3. Configure as variáveis de ambiente no painel do Railway
-4. Configure o **Start Command**: `uv run python main.py`
-5. Copie a URL pública gerada pelo Railway
-6. No ML Developer, configure a **URL de notificação**: `https://sua-url.railway.app/webhook`
+1. Crie um projeto no [Railway](https://railway.app) conectando este repositório
+2. Configure as variáveis de ambiente no painel
+3. **Start command**: `uv run python main.py`
+4. No [ML Developer](https://developers.mercadolivre.com.br/devcenter), configure:
+   - **URL de notificação**: `https://sua-url.railway.app/webhook`
+   - **Topics ativos**: `questions`, `messages`, `orders_v2`, `shipments`
+
+### Autenticação ML (primeiro acesso)
+
+Acesse no navegador:
+```
+https://sua-url.railway.app/callback?code=SEU_CODE
+```
+
+O sistema troca o code pelo token e atualiza o Railway automaticamente.
+A partir daí, o `ML_REFRESH_TOKEN` é renovado sozinho a cada expiração.
 
 ---
 
 ## Stack
 
-- Python 3.12+
+- Python 3.12+ · [uv](https://github.com/astral-sh/uv)
 - [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — claude-haiku-4-5
-- [FastAPI](https://fastapi.tiangolo.com/) — servidor webhook
+- [FastAPI](https://fastapi.tiangolo.com/) + uvicorn — servidor webhook
 - [httpx](https://www.python-httpx.org/) — chamadas API ML e Telegram
-- [uv](https://github.com/astral-sh/uv) — gerenciador de pacotes

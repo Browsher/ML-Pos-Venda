@@ -7,6 +7,7 @@ Suporta dois modos:
 import logging
 import httpx
 from config import config
+from railway import atualizar_variavel
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +38,9 @@ class MLClient:
             self._access_token = data["access_token"]
             if data.get("refresh_token"):
                 config.ML_REFRESH_TOKEN = data["refresh_token"]
-                log.info("Refresh token renovado e atualizado em memoria")
+                log.info("Refresh token renovado — atualizando no Railway...")
+                atualizar_variavel("ML_REFRESH_TOKEN", data["refresh_token"])
+                atualizar_variavel("ML_ACCESS_TOKEN", data["access_token"])
         else:
             raise TokenExpiradoError(
                 "Access token expirado e ML_REFRESH_TOKEN nao configurado. "

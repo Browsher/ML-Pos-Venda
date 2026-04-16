@@ -11,10 +11,8 @@ from fastapi.responses import HTMLResponse
 from config import config
 from agents.orquestrador import Orquestrador
 from agents.enviador import Enviador
+from railway import atualizar_variavel
 
-RAILWAY_API_TOKEN = "9165c94a-5cce-42f9-8ae3-160b38b290b1"
-RAILWAY_SERVICE_ID = "96a04753-9183-444c-8ec6-4742ddaf0323"
-RAILWAY_ENVIRONMENT_ID = "c2cff01d-acc3-4fd4-a6de-9fc0c2d2bcf9"
 ML_REDIRECT_URI = "https://ml-pos-venda-production-3f78.up.railway.app/callback"
 
 log = logging.getLogger(__name__)
@@ -98,7 +96,7 @@ async def ml_callback(request: Request):
     for nome, valor in [("ML_ACCESS_TOKEN", access_token), ("ML_REFRESH_TOKEN", refresh_token)]:
         if not valor:
             continue
-        ok = _atualizar_variavel_railway(nome, valor)
+        ok = atualizar_variavel(nome, valor)
         if not ok:
             erros.append(nome)
 
@@ -119,37 +117,6 @@ async def ml_callback(request: Request):
         f"<p>refresh_token obtido: <b>{tem_refresh}</b></p>"
         f"<p>O Railway vai reiniciar com os novos tokens em instantes.</p>"
     )
-
-
-def _atualizar_variavel_railway(nome: str, valor: str) -> bool:
-    """Atualiza uma variavel de ambiente no Railway via API GraphQL."""
-    query = """
-    mutation upsertVariables($input: VariableCollectionUpsertInput!) {
-        variableCollectionUpsert(input: $input)
-    }
-    """
-    variables = {
-        "input": {
-            "projectId": "b12551c3-7c69-4bb6-be0b-884141f51198",
-            "serviceId": RAILWAY_SERVICE_ID,
-            "environmentId": RAILWAY_ENVIRONMENT_ID,
-            "variables": {nome: valor},
-        }
-    }
-    try:
-        resp = httpx.post(
-            "https://backboard.railway.com/graphql/v2",
-            json={"query": query, "variables": variables},
-            headers={
-                "Authorization": f"Bearer {RAILWAY_API_TOKEN}",
-                "Content-Type": "application/json",
-            },
-            timeout=15,
-        )
-        return resp.is_success and "errors" not in resp.json()
-    except Exception as e:
-        log.error(f"Erro ao chamar Railway API: {e}")
-        return False
 
 
 @app.post("/webhook")
