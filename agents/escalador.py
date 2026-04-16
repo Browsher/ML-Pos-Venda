@@ -34,7 +34,6 @@ class Escalador:
         msg = (
             f"{emoji} {titulo}\n\n"
             f"Comprador: {interacao.texto}\n\n"
-            f"Sugestao ({resposta.confianca:.0%}): {resposta.texto}\n\n"
             f"/r {interacao.id} sua resposta aqui"
         )
 

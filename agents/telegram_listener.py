@@ -107,7 +107,6 @@ class TelegramListener:
             msg = (
                 f"❓ {titulo}\n\n"
                 f"Comprador: {texto}\n\n"
-                f"Sugestao ({confianca:.0%}): {sugestao}\n\n"
                 f"/r {iid} sua resposta aqui"
             )
             self._enviar_telegram(msg)
