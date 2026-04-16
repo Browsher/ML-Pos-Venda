@@ -36,10 +36,6 @@ class Monitor:
             interacoes.extend(self._buscar_perguntas())
         except Exception as e:
             log.error(f"Erro ao buscar perguntas: {e}")
-        try:
-            interacoes.extend(self._buscar_mensagens())
-        except Exception as e:
-            log.warning(f"Erro ao buscar mensagens (ignorado): {e}")
         return interacoes
 
     def _buscar_perguntas(self) -> list[Interacao]:
@@ -59,32 +55,6 @@ class Monitor:
                     texto=p["text"],
                     item_id=item_id,
                     nome_comprador=nome,
-                )
-            )
-        return resultado
-
-    def _buscar_mensagens(self) -> list[Interacao]:
-        conversas = self._client.listar_conversas_abertas()
-        resultado = []
-        for conv in conversas:
-            pack_id = str(conv["id"])
-            if pack_id in self._respondidas:
-                continue
-            msgs = self._client.buscar_mensagens_conversa(pack_id)
-            if not msgs:
-                continue
-            ultima = msgs[-1]
-            # So processar se a ultima mensagem e do comprador
-            if ultima.get("from", {}).get("user_id") == ultima.get("seller_id"):
-                continue
-            historico = [m["text"] for m in msgs if "text" in m]
-            resultado.append(
-                Interacao(
-                    tipo=TipoInteracao.MENSAGEM,
-                    id=pack_id,
-                    texto=ultima.get("text", ""),
-                    ordem_id=str(conv.get("order_id", "")),
-                    historico=historico,
                 )
             )
         return resultado
