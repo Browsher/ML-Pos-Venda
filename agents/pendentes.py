@@ -36,11 +36,12 @@ class Pendentes:
         self._salvar()
 
     def buscar(self, interacao_id: str) -> dict | None:
-        return self._dados.get(interacao_id)
+        return self._carregar().get(interacao_id)
 
     def remover(self, interacao_id: str) -> None:
+        self._dados = self._carregar()
         self._dados.pop(interacao_id, None)
         self._salvar()
 
     def todos(self) -> dict:
-        return dict(self._dados)
+        return self._carregar()
