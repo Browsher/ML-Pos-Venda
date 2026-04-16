@@ -34,6 +34,8 @@ class TelegramListener:
 
             if texto.startswith("/r "):
                 processadas += self._processar_resposta(texto)
+            elif texto == "/listar":
+                self._listar_pendentes()
 
         return processadas
 
@@ -91,6 +93,24 @@ class TelegramListener:
             self._ml.responder_pergunta(interacao_id, texto)
         else:
             self._ml.responder_mensagem(interacao_id, texto)
+
+    def _listar_pendentes(self) -> None:
+        todos = self._pendentes.todos()
+        if not todos:
+            self._enviar_telegram("Nenhuma pergunta pendente.")
+            return
+        for iid, p in todos.items():
+            titulo = p.get("titulo_item") or "sem titulo"
+            confianca = p.get("confianca", 0)
+            sugestao = p.get("sugestao", "")
+            texto = p.get("texto", "")
+            msg = (
+                f"❓ {titulo}\n\n"
+                f"Comprador: {texto}\n\n"
+                f"Sugestao ({confianca:.0%}): {sugestao}\n\n"
+                f"/r {iid} sua resposta aqui"
+            )
+            self._enviar_telegram(msg)
 
     def _enviar_telegram(self, texto: str) -> None:
         try:
