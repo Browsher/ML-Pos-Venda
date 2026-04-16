@@ -46,7 +46,7 @@ class Monitor:
             if qid in self._respondidas:
                 continue
             from_data = p.get("from", {})
-            nome = from_data.get("nickname", "")
+            nome = str(from_data.get("id", ""))
             item_id = p.get("item_id", "")
             resultado.append(
                 Interacao(

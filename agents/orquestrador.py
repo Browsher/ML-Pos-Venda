@@ -68,13 +68,10 @@ class Orquestrador:
             nome_comprador = ""
             for msg in reversed(mensagens):
                 from_info = msg.get("from", {})
-                if from_info.get("user_type", "") == "buyers":
-                    texto_raw = msg.get("text", {})
-                    if isinstance(texto_raw, dict):
-                        texto = texto_raw.get("plain", "")
-                    else:
-                        texto = str(texto_raw)
-                    nome_comprador = str(from_info.get("user_id", pack_id))
+                remetente = str(from_info.get("user_id", ""))
+                if remetente != str(config.ML_SELLER_ID):
+                    texto = str(msg.get("text", ""))
+                    nome_comprador = remetente
                     break
 
             if texto:

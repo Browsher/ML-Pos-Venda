@@ -33,7 +33,11 @@ class MLClient:
                 },
             )
             resp.raise_for_status()
-            self._access_token = resp.json()["access_token"]
+            data = resp.json()
+            self._access_token = data["access_token"]
+            if data.get("refresh_token"):
+                config.ML_REFRESH_TOKEN = data["refresh_token"]
+                log.info("Refresh token renovado e atualizado em memoria")
         else:
             raise TokenExpiradoError(
                 "Access token expirado e ML_REFRESH_TOKEN nao configurado. "
@@ -58,6 +62,42 @@ class MLClient:
             resp = self._http.post(path, headers=self._headers(), json=body, params=params or None)
         resp.raise_for_status()
         return resp.json()
+
+    # --- Follow-up (pedidos e envios) ---
+
+    def buscar_pedido(self, order_id: str) -> dict:
+        return self._get(f"/orders/{order_id}")
+
+    def buscar_envio(self, shipment_id: str) -> dict:
+        resp = self._http.get(
+            f"/shipments/{shipment_id}",
+            headers={**self._headers(), "x-format-new": "true"},
+        )
+        if resp.status_code == 401:
+            self._renovar_token()
+            resp = self._http.get(
+                f"/shipments/{shipment_id}",
+                headers={**self._headers(), "x-format-new": "true"},
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    # ID do agente de mensageria ML para Brasil (obrigatorio desde fev/2026)
+    _ML_AGENT_ID = 3037675074
+
+    def enviar_followup(self, pack_id: str, texto: str) -> dict:
+        """Envia mensagem proativa de follow-up (compra/envio/entrega)."""
+        if len(texto) > 350:
+            texto = texto[:347] + "..."
+        return self._post(
+            f"/messages/packs/{pack_id}/sellers/{config.ML_SELLER_ID}",
+            {
+                "from": {"user_id": int(config.ML_SELLER_ID)},
+                "to": {"user_id": self._ML_AGENT_ID},
+                "text": texto,
+            },
+            tag="post_sale",
+        )
 
     # --- Perguntas ---
 
@@ -90,7 +130,7 @@ class MLClient:
         return self._get(f"/messages/{uuid}", tag="post_sale")
 
     def listar_nao_lidas(self) -> list[dict]:
-        data = self._get("/messages/unread", tag="post_sale")
+        data = self._get("/messages/unread", tag="post_sale", role="seller")
         return data.get("results", [])
 
     def buscar_mensagens_pack(self, pack_id: str) -> list[dict]:
@@ -101,8 +141,14 @@ class MLClient:
         return data.get("messages", [])
 
     def responder_mensagem(self, pack_id: str, texto: str) -> dict:
+        if len(texto) > 350:
+            texto = texto[:347] + "..."
         return self._post(
             f"/messages/packs/{pack_id}/sellers/{config.ML_SELLER_ID}",
-            {"message": texto},
+            {
+                "from": {"user_id": int(config.ML_SELLER_ID)},
+                "to": {"user_id": self._ML_AGENT_ID},
+                "text": texto,
+            },
             tag="post_sale",
         )

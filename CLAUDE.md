@@ -1,16 +1,15 @@
 # Pos-Venda ML
 
-Sistema automatico de resposta a perguntas e mensagens de pos-venda no Mercado Livre.
-Nicho: cameras de seguranca e acessorios.
+Sistema unificado com dois subsistemas no Mercado Livre. Nicho: cameras de seguranca e acessorios.
+
+1. **Pos-venda** — responde perguntas e mensagens de compradores (com supervisao humana via Telegram)
+2. **Follow-up** — envia mensagens automaticas em cada etapa do pedido (compra, envio, entrega)
 
 ## Comandos
 
 ```bash
-# Rodar em loop continuo
+# Iniciar servidor webhook (Railway)
 uv run python main.py
-
-# Rodar um unico ciclo (teste / cron externo)
-uv run python main.py --ciclo
 
 # Testes
 uv run python -m pytest tests/ -v
@@ -19,11 +18,10 @@ uv run python -m pytest tests/ -v
 ## Stack
 
 - Python 3.12+, uv
-- Anthropic SDK (claude-sonnet-4-6)
+- Anthropic SDK (claude-haiku-4-5)
+- FastAPI + uvicorn (webhook server)
 - httpx (chamadas API ML e Telegram)
 - python-dotenv
-- python-telegram-bot / httpx para Telegram
-- APScheduler (opcional para deploy em Railway)
 
 ## Regra de Uso de Agentes Claude
 
@@ -63,80 +61,104 @@ Orquestrador (contexto principal)
 
 ## Agentes do Sistema (codigo)
 
+### Pos-venda
 | Agente | Arquivo | Funcao |
 |--------|---------|--------|
-| Orquestrador | agents/orquestrador.py | Loop principal, coordena todos |
-| Monitor | agents/monitor.py | Busca perguntas e mensagens novas via API ML |
+| Orquestrador | agents/orquestrador.py | Coordena perguntas e mensagens |
+| Monitor | agents/monitor.py | Busca perguntas novas via API ML |
 | Analisador | agents/analisador.py | Classifica intencao com Claude |
 | Especialista | agents/especialista.py | Carrega base de conhecimento relevante |
 | Respondedor | agents/respondedor.py | Gera resposta com Claude e posta via API ML |
 | Escalador | agents/escalador.py | Notifica humano via Telegram se confianca baixa |
+| TelegramListener | agents/telegram_listener.py | Recebe comandos do Telegram |
+| Formatador | agents/formatador.py | Polida resposta (saudacao + horario) |
+| Pendentes | agents/pendentes.py | Persiste interacoes aguardando resposta |
+| Memoria | agents/memoria.py | Persiste respostas aprovadas para aprendizado |
 
-## Fluxo
+### Follow-up
+| Agente | Arquivo | Funcao |
+|--------|---------|--------|
+| Enviador | agents/enviador.py | Processa eventos compra/envio/entrega |
+| Gerador | agents/gerador.py | Gera mensagens com Claude + templates |
+| Enviados | agents/enviados.py | Persiste eventos processados (evita duplicatas) |
+
+## Fluxo Pos-venda
 
 ```
-Monitor → Analisador → Especialista → Respondedor
-                                           |
-                              confianca >= 0.75 → posta no ML
-                              confianca < 0.75  → Escalador → Telegram
+Webhook (questions/messages)
+    → Orquestrador → Monitor → Analisador → Especialista → Respondedor
+        confianca >= 0.75 → posta no ML automaticamente
+        confianca < 0.75  → Escalador → Telegram → /r <id> resposta
 ```
+
+## Fluxo Follow-up
+
+```
+Webhook orders_v2 (paid)      → Enviador.processar_compra()
+Webhook shipments (shipped)   → Enviador.processar_envio()
+Webhook shipments (delivered) → Enviador.processar_entrega()
+    → Gerador cria mensagem com Claude + template
+    → MLClient.enviar_followup() posta na conversa
+    → Enviados.marcar() salva em data/enviados.json
+```
+
+## Comandos Telegram
+
+| Comando | Funcao |
+|---------|--------|
+| `/r <id> <resposta>` | Responde uma pendente no ML |
+| `/listar` | Lista todas as pendentes |
+| `/status` | Resumo de pendentes e base de conhecimento |
+| `/cancelar <id>` | Remove pendente sem responder |
+| `/comandos` | Mostra esta lista |
+
+Apenas mensagens do `TELEGRAM_CHAT_ID` configurado sao processadas.
 
 ## Configuracao
 
-Copie `.env.example` para `.env` e preencha:
+Variaveis de ambiente necessarias:
 - `ANTHROPIC_API_KEY`
 - `ML_CLIENT_ID`, `ML_CLIENT_SECRET`, `ML_REFRESH_TOKEN`, `ML_SELLER_ID`
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
 ## Base de Conhecimento
 
-Em `base_conhecimento/`:
-- `produtos.md` — specs e informacoes dos produtos
+Em `base_conhecimento/` (preencher antes de producao):
+- `produtos.md` — specs dos produtos
 - `faq.md` — perguntas frequentes
 - `garantia.md` — politica de garantia e devolucao
 - `instalacao.md` — guia de instalacao
 
-**Preencha esses arquivos com os dados reais da sua loja antes de rodar em producao.**
+Em `templates/` (follow-up):
+- `compra.md`, `envio.md`, `entrega.md` — templates das mensagens automaticas
 
 ## Autenticacao ML
 
-A API do ML usa OAuth2 com refresh token. O `MLClient` renova o access token automaticamente.
-Para obter o refresh token inicial, siga o fluxo de autorizacao OAuth do ML Developer.
+OAuth2 com refresh token. Renovacao automatica em qualquer 401.
+Rota `/callback` no Railway troca o code OAuth e atualiza os tokens via Railway GraphQL API.
 
 ## Deploy (Railway)
 
 1. Crie projeto no Railway, conecte este repositorio
-2. Configure as variaveis de ambiente (.env)
+2. Configure as variaveis de ambiente
 3. Start command: `uv run python main.py`
+4. No ML Developer: ative topics `questions`, `messages`, `orders_v2`, `shipments`
+5. URL de notificacao: `https://sua-url.railway.app/webhook`
 
 ---
 
-## Status atual (2026-04-15)
+## Status atual (2026-04-16)
 
 ### Concluido
-- Estrutura completa do projeto criada
-- 6 agentes implementados (orquestrador, monitor, analisador, especialista, respondedor, escalador)
+- Estrutura completa do projeto criada e em producao no Railway
+- 8 agentes implementados (orquestrador, monitor, analisador, especialista, respondedor, escalador, telegram_listener, formatador)
 - 11 testes passando (test_analisador, test_respondedor, test_escalador)
-- config.py corrigido para nao explodir sem .env
-- Script de autenticacao OAuth criado: `auth_ml.py`
-- App criado no ML Developer com permissao "comunicacoes pre e pos-venda"
-- URI de redirect configurada: `https://webhook.site/88a9cc8f-8539-4cb5-b575-fb785b3cc0fe`
-- `.env` criado com ML_CLIENT_ID e ML_CLIENT_SECRET preenchidos
-
-### Proximo passo (retomar aqui amanha)
-Rodar o script de autenticacao para gerar o ML_REFRESH_TOKEN:
-
-```bash
-cd C:\Users\ADM\projetos\ml-pos-venda
-uv run python auth_ml.py
-```
-
-O script abre o navegador, voce loga no ML, autoriza o app, e copia o `code` que aparece
-no webhook.site para o terminal. O refresh token e salvo automaticamente no .env.
-
-### Ordem restante
-1. Gerar ML_REFRESH_TOKEN via auth_ml.py
-2. Configurar bot Telegram (BotFather) e preencher TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
-3. Preencher ANTHROPIC_API_KEY no .env
-4. Testar um ciclo real: `uv run python main.py --ciclo`
-5. Deploy no Railway
+- Webhook server com FastAPI (perguntas + mensagens pos-venda com debounce 8s)
+- Autenticacao OAuth automatica via rota /callback no Railway (atualiza tokens via GraphQL)
+- Refresh token obtido e configurado — renovacao automatica sem intervencao
+- Mensagens pos-venda: leitura do texto real do comprador via buscar_mensagens_pack
+- tag=post_sale corrigido em todos os endpoints de mensagens
+- Comandos Telegram: /r, /listar, /status, /cancelar, /comandos
+- Seguranca: apenas chat_id autorizado pode usar comandos do bot
+- docs/ criado com arquitetura, api-ml, deploy e telegram
+- CLAUDE.md atualizado com regras de uso de agentes (Explore/Plan obrigatorio)

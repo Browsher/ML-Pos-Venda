@@ -1,6 +1,6 @@
-# Arquitetura: ML Pós-Venda
+# Arquitetura: ML Pós-Venda + Follow-up
 
-## Fluxo Principal
+## Fluxo Pos-venda: Perguntas
 
 ```
 Webhook ML (topic=questions)
@@ -19,7 +19,7 @@ Webhook ML (topic=questions)
     confianca <  0.75 → Escalador.escalar() → Telegram
 ```
 
-## Fluxo de Resposta Humana
+## Fluxo Pos-venda: Resposta Humana
 
 ```
 Humano envia /r <id> <texto> no Telegram
@@ -37,24 +37,54 @@ Humano envia /r <id> <texto> no Telegram
     Confirmacao no Telegram
 ```
 
-## Fluxo de Mensagens Pós-Venda
+## Fluxo Pos-venda: Mensagens de Compradores
 
 ```
-Webhook ML (topic=messages, resource=UUID)
+Webhook ML (topic=messages, resource=pack_id)
         ↓
     debounce 8s por pack_id
     (aguarda mensagens subsequentes do mesmo comprador)
         ↓
     Orquestrador.processar_mensagem_pack()
         ↓
-    Escalador.escalar_mensagem_simples()
+    MLClient.buscar_mensagens_pack() → ultima mensagem do comprador
         ↓
-    Telegram: "💬 Nova mensagem. Ver no ML"
+    Escalador.escalar_mensagem()
+        ↓
+    Telegram: "💬 Mensagem. /r <pack_id> resposta"
+```
+
+## Fluxo Follow-up
+
+```
+Webhook ML (topic=orders_v2, status=paid)
+        ↓
+    _processar_order() → Enviador.processar_compra()
+
+Webhook ML (topic=shipments, status=shipped)
+        ↓
+    _processar_shipment() → Enviador.processar_envio()
+
+Webhook ML (topic=shipments, status=delivered)
+        ↓
+    _processar_shipment() → Enviador.processar_entrega()
+
+Em todos os casos:
+        ↓
+    Enviados.ja_enviou() → ignora se ja processado (evita duplicata)
+        ↓
+    Gerador.gerar(evento, dados) → Claude + template markdown
+        ↓
+    MLClient.enviar_followup(pack_id, texto) → API ML
+        ↓
+    Enviados.marcar() → salva em data/enviados.json
 ```
 
 ---
 
 ## Agentes
+
+### Pos-venda
 
 | Agente | Arquivo | Entrada | Saída |
 |--------|---------|---------|-------|
@@ -69,6 +99,14 @@ Webhook ML (topic=messages, resource=UUID)
 | Pendentes | pendentes.py | dados da escalada | pendentes.json |
 | Memoria | memoria.py | pergunta + resposta | memoria.json |
 
+### Follow-up
+
+| Agente | Arquivo | Entrada | Saída |
+|--------|---------|---------|-------|
+| Enviador | enviador.py | order_id / shipment_id | Mensagem no ML |
+| Gerador | gerador.py | evento + dados do pedido | texto gerado por Claude |
+| Enviados | enviados.py | order_id + evento | enviados.json |
+
 ---
 
 ## Decisões Técnicas
@@ -82,8 +120,10 @@ Webhook ML (topic=messages, resource=UUID)
 | Fallback intencao=OUTRO | Se Claude falhar no JSON, escala para humano em vez de crashar |
 | Loop Telegram independente (10s) | /r funciona sem depender de webhook do ML |
 | Startup cycle (2s delay) | Pega perguntas abertas que chegaram durante downtime |
-| chat_id convertido para int | Evita rejeição do Telegram por tipo incorreto |
-| Mensagem truncada em 4096 chars | Limite do Telegram |
+| chat_id autorizado | Apenas TELEGRAM_CHAT_ID pode usar comandos do bot |
+| Enviados sempre relê do disco | Evita duplicatas mesmo após restart do Railway |
+| enviar_followup separado de responder_mensagem | Formatos de corpo diferentes: followup usa agente ML (fev/2026) |
+| Limite 350 chars no follow-up | Limite da API ML para mensagens |
 
 ---
 
@@ -92,28 +132,37 @@ Webhook ML (topic=messages, resource=UUID)
 ```
 ml-pos-venda/
 ├── agents/
-│   ├── orquestrador.py
-│   ├── monitor.py
-│   ├── analisador.py
-│   ├── especialista.py
-│   ├── respondedor.py
-│   ├── escalador.py
-│   ├── telegram_listener.py
-│   ├── formatador.py
-│   ├── pendentes.py
-│   └── memoria.py
+│   ├── orquestrador.py       ← pos-venda: loop principal
+│   ├── monitor.py            ← pos-venda: busca perguntas
+│   ├── analisador.py         ← pos-venda: classifica intencao
+│   ├── especialista.py       ← pos-venda: base de conhecimento
+│   ├── respondedor.py        ← pos-venda: gera e posta resposta
+│   ├── escalador.py          ← pos-venda: notifica via Telegram
+│   ├── telegram_listener.py  ← pos-venda: recebe comandos
+│   ├── formatador.py         ← pos-venda: polida resposta
+│   ├── pendentes.py          ← pos-venda: fila de pendentes
+│   ├── memoria.py            ← pos-venda: aprendizado
+│   ├── enviador.py           ← follow-up: processa eventos
+│   ├── gerador.py            ← follow-up: gera mensagens com Claude
+│   └── enviados.py           ← follow-up: evita duplicatas
+├── templates/
+│   ├── compra.md             ← follow-up: pedido confirmado
+│   ├── envio.md              ← follow-up: produto enviado
+│   └── entrega.md            ← follow-up: produto entregue
 ├── base_conhecimento/
-│   ├── produtos.md       ← preencher com specs reais
-│   ├── faq.md            ← preencher com perguntas comuns
-│   ├── garantia.md       ← preencher com políticas
-│   ├── instalacao.md     ← preencher com guias
-│   ├── memoria.json      ← auto-gerado (respostas aprovadas)
-│   └── pendentes.json    ← auto-gerado (aguardando resposta)
+│   ├── produtos.md           ← preencher com specs reais
+│   ├── faq.md                ← preencher com perguntas comuns
+│   ├── garantia.md           ← preencher com politicas
+│   ├── instalacao.md         ← preencher com guias
+│   ├── memoria.json          ← auto-gerado (respostas aprovadas)
+│   └── pendentes.json        ← auto-gerado (aguardando resposta)
+├── data/
+│   └── enviados.json         ← auto-gerado (follow-ups enviados)
 ├── docs/
-│   ├── arquitetura.md    ← este arquivo
-│   ├── api-ml.md         ← endpoints e limitações da API ML
-│   ├── deploy.md         ← variáveis de ambiente e Railway
-│   └── telegram.md       ← comandos e notificações
+│   ├── arquitetura.md        ← este arquivo
+│   ├── api-ml.md             ← endpoints e limitações da API ML
+│   ├── deploy.md             ← variáveis de ambiente e Railway
+│   └── telegram.md           ← comandos e notificações
 ├── tests/
 ├── ml_client.py
 ├── webhook_server.py

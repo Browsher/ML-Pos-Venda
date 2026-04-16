@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 
 from config import config
 from agents.orquestrador import Orquestrador
+from agents.enviador import Enviador
 
 RAILWAY_API_TOKEN = "9165c94a-5cce-42f9-8ae3-160b38b290b1"
 RAILWAY_SERVICE_ID = "96a04753-9183-444c-8ec6-4742ddaf0323"
@@ -19,6 +20,7 @@ ML_REDIRECT_URI = "https://ml-pos-venda-production-3f78.up.railway.app/callback"
 log = logging.getLogger(__name__)
 
 orq: Orquestrador | None = None
+enviador: Enviador | None = None
 
 
 async def _ciclo_startup():
@@ -46,9 +48,11 @@ async def _loop_telegram():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global orq
+    global orq, enviador
     orq = Orquestrador()
     log.info("Orquestrador iniciado")
+    enviador = Enviador()
+    log.info("Enviador iniciado")
     asyncio.create_task(_ciclo_startup())
     asyncio.create_task(_loop_telegram())
     yield
@@ -170,8 +174,14 @@ async def processar_notificacao(payload: dict):
             log.info(f"Processando pergunta id={resource_id}")
             orq.ciclo()
         elif topic == "messages":
-            log.info(f"Mensagem recebida pack={resource_id} — aguardando 8s")
+            log.info(f"Mensagem recebida uuid={resource_id} — aguardando 8s")
             _agendar_processamento_mensagem(resource_id)
+        elif topic == "orders_v2":
+            log.info(f"Pedido recebido id={resource_id}")
+            _processar_order(resource_id)
+        elif topic == "shipments":
+            log.info(f"Envio recebido id={resource_id}")
+            _processar_shipment(resource_id)
     except Exception as e:
         log.error(f"Erro ao processar notificacao: {e}")
 
@@ -193,6 +203,28 @@ async def _processar_mensagem_apos_delay(pack_id: str) -> None:
         log.error(f"Erro ao processar pack {pack_id}: {e}")
     finally:
         _debounce_tasks.pop(pack_id, None)
+
+
+def _processar_order(order_id: str) -> None:
+    try:
+        pedido = enviador._ml.buscar_pedido(order_id)
+        if pedido.get("status") == "paid":
+            enviador.processar_compra(order_id)
+    except Exception as e:
+        log.error(f"Erro ao processar order {order_id}: {e}")
+
+
+def _processar_shipment(shipment_id: str) -> None:
+    try:
+        envio = enviador._ml.buscar_envio(shipment_id)
+        status = envio.get("status", "")
+        order_id = str(envio.get("order_id", ""))
+        if status == "shipped":
+            enviador.processar_envio(order_id, shipment_id)
+        elif status == "delivered":
+            enviador.processar_entrega(order_id)
+    except Exception as e:
+        log.error(f"Erro ao processar shipment {shipment_id}: {e}")
 
 
 def run():
