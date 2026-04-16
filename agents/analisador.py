@@ -1,4 +1,7 @@
 """Analisador: classifica a intencao da mensagem recebida."""
+import json
+import logging
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -7,21 +10,23 @@ import anthropic
 from config import config
 from agents.monitor import Interacao
 
+log = logging.getLogger(__name__)
+
 
 class Intencao(Enum):
-    DUVIDA_TECNICA = "duvida_tecnica"        # Como instalar, compatibilidade, specs
-    PRAZO_ENTREGA = "prazo_entrega"           # Quando chega, rastreio
-    TROCA_DEVOLUCAO = "troca_devolucao"       # Produto com defeito, arrependimento
-    RECLAMACAO = "reclamacao"                 # Insatisfacao geral
-    CONFIRMACAO_PEDIDO = "confirmacao_pedido" # Confirmacao de compra, nota fiscal
-    OUTRO = "outro"                           # Fora do escopo
+    DUVIDA_TECNICA = "duvida_tecnica"
+    PRAZO_ENTREGA = "prazo_entrega"
+    TROCA_DEVOLUCAO = "troca_devolucao"
+    RECLAMACAO = "reclamacao"
+    CONFIRMACAO_PEDIDO = "confirmacao_pedido"
+    OUTRO = "outro"
 
 
 @dataclass
 class Analise:
     intencao: Intencao
-    resumo: str        # Uma linha descrevendo o que o comprador quer
-    urgente: bool      # True se reclamacao ou devolucao
+    resumo: str
+    urgente: bool
 
 
 _PROMPT_SISTEMA = """Voce classifica mensagens de compradores no Mercado Livre.
@@ -36,6 +41,15 @@ Valores validos para intencao:
 - confirmacao_pedido
 - outro
 """
+
+
+def _extrair_json(texto: str) -> dict:
+    """Extrai JSON mesmo se vier com texto ao redor."""
+    texto = texto.strip()
+    match = re.search(r"\{.*\}", texto, re.DOTALL)
+    if match:
+        return json.loads(match.group())
+    raise ValueError(f"JSON nao encontrado na resposta: {texto!r}")
 
 
 class Analisador:
@@ -55,10 +69,18 @@ class Analisador:
             messages=[{"role": "user", "content": contexto}],
         )
 
-        import json
-        dados = json.loads(msg.content[0].text)
+        texto = msg.content[0].text if msg.content else ""
+        log.debug(f"Analisador resposta: {texto!r}")
+
+        try:
+            dados = _extrair_json(texto)
+            intencao = Intencao(dados.get("intencao", "outro"))
+        except Exception as e:
+            log.warning(f"Falha ao parsear analise ({e}), usando fallback outro")
+            return Analise(intencao=Intencao.OUTRO, resumo=interacao.texto[:80], urgente=False)
+
         return Analise(
-            intencao=Intencao(dados["intencao"]),
-            resumo=dados["resumo"],
-            urgente=dados["urgente"],
+            intencao=intencao,
+            resumo=dados.get("resumo", ""),
+            urgente=dados.get("urgente", False),
         )
