@@ -71,6 +71,35 @@ class MLClient:
     def buscar_pedido(self, order_id: str) -> dict:
         return self._get(f"/orders/{order_id}")
 
+    def buscar_pedido_por_pack(self, pack_id: str) -> dict:
+        """Busca pedido pelo pack_id (usado em mensagens pos-venda)."""
+        data = self._get("/orders/search", pack=pack_id, seller=config.ML_SELLER_ID)
+        results = data.get("results", [])
+        return results[0] if results else {}
+
+    def contar_reclamacoes_abertas(self) -> int:
+        """Conta reclamações abertas do seller."""
+        data = self._get(
+            "/post-purchase/v1/claims/search",
+            seller_id=config.ML_SELLER_ID,
+            status="opened",
+        )
+        return data.get("paging", {}).get("total", 0)
+
+    def contar_pedidos_por_envio(self, shipping_status: str) -> int:
+        """Conta pedidos pelo status de envio (ex: ready_to_ship, shipped)."""
+        params = {
+            "seller": config.ML_SELLER_ID,
+            "order.status": "paid",
+            "shipping.status": shipping_status,
+        }
+        resp = self._http.get("/orders/search", headers=self._headers(), params=params)
+        if resp.status_code == 401:
+            self._renovar_token()
+            resp = self._http.get("/orders/search", headers=self._headers(), params=params)
+        resp.raise_for_status()
+        return resp.json().get("paging", {}).get("total", 0)
+
     def buscar_envio(self, shipment_id: str) -> dict:
         resp = self._http.get(
             f"/shipments/{shipment_id}",
@@ -99,18 +128,6 @@ class MLClient:
         )
 
     # --- Perguntas ---
-
-    def buscar_titulo_item(self, item_id: str) -> str:
-        try:
-            resp = httpx.get(
-                f"https://api.mercadolibre.com/items/{item_id}",
-                params={"attributes": "title"},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            return resp.json().get("title", "")
-        except Exception:
-            return ""
 
     def listar_perguntas_novas(self) -> list[dict]:
         data = self._get(

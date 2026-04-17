@@ -1,40 +1,37 @@
 # ML Pós-Venda
 
-Sistema automatizado para lojas no **Mercado Livre** com dois subsistemas rodando em um único serviço:
-
-- **Pós-venda** — responde perguntas e mensagens de compradores com supervisão via Telegram
-- **Follow-up** — envia mensagens automáticas em cada etapa do pedido (compra, envio, entrega)
+Sistema automatizado para lojas no **Mercado Livre** — responde compradores com IA e envia mensagens de follow-up em cada etapa do pedido. Feito para o nicho de câmeras de segurança e acessórios.
 
 ---
 
-## Como funciona
+## O que faz
 
-### Pós-venda
+### Atendimento automático
+Perguntas pré-venda e mensagens pós-venda são classificadas e respondidas pelo Claude automaticamente. Quando a confiança é baixa, você recebe uma notificação no Telegram e responde com um comando curto.
 
 ```
-Comprador faz pergunta ou envia mensagem no ML
+Comprador pergunta ou envia mensagem no ML
         ↓
-Claude analisa a intenção e gera uma resposta
+Claude analisa a intenção e gera resposta
         ↓
-Confiança >= 75% → posta automaticamente no ML
-Confiança < 75%  → você recebe no Telegram
+Confiança ≥ 75% → posta automaticamente no ML
+Confiança < 75% → notificação no Telegram
         ↓
-Você responde com /r <id> <texto>
+/r 1 Sim, é compatível com qualquer DVR HDCVI
         ↓
-Formatador aplica: saudação + horário + polimento
+Formatador aplica saudação por horário + polimento
         ↓
-Resposta postada no ML e salva na memória
+Resposta postada no ML · exemplo salvo na memória
 ```
 
 ### Follow-up automático
+Mensagens personalizadas pelo Claude enviadas em cada etapa do pedido:
 
 ```
-Venda confirmada  → "Olá João! Seu pedido foi confirmado..."
-Produto enviado   → "Seu pedido foi enviado! Acompanhe pelo ML..."
-Produto entregue  → "Chegou tudo certo? Qualquer dúvida é só chamar!"
+Venda confirmada  →  "Olá João! Seu pedido foi confirmado..."
+Produto enviado   →  "Seu pedido foi enviado! Acompanhe pelo ML..."
+Produto entregue  →  "Chegou tudo certo? Qualquer dúvida é só chamar!"
 ```
-
-Mensagens geradas pelo Claude com base nos templates em `templates/`.
 
 ---
 
@@ -42,103 +39,108 @@ Mensagens geradas pelo Claude com base nos templates em `templates/`.
 
 | Comando | O que faz |
 |---------|-----------|
-| `/r <id> <resposta>` | Responde uma pergunta ou mensagem pendente no ML |
-| `/listar` | Lista todas as pendentes com o comando pronto |
-| `/status` | Resumo de pendentes e tamanho da base de conhecimento |
-| `/cancelar <id>` | Remove uma pendente sem responder |
+| `/r <n> <resposta>` | Responde a pendente de número `n` no ML |
+| `/listar` | Lista todas as pendentes em uma mensagem |
+| `/status` | Pendentes · pedidos para enviar · em trânsito · reclamações |
+| `/cancelar <n>` | Remove a pendente `n` sem responder |
 | `/comandos` | Mostra esta lista |
 
-Apenas o seu chat_id configurado pode usar o bot.
+> Apenas o seu `TELEGRAM_CHAT_ID` pode usar o bot.
 
 ---
 
-## Agentes
+## Arquitetura
 
-### Pós-venda
+### Agentes de atendimento
 
-| Agente | Função |
-|--------|--------|
-| **Orquestrador** | Coordena o fluxo de perguntas e mensagens |
-| **Monitor** | Busca perguntas novas via API ML |
-| **Analisador** | Classifica a intenção com Claude |
-| **Especialista** | Carrega a base de conhecimento relevante |
-| **Respondedor** | Gera e posta resposta automática |
-| **Escalador** | Notifica você via Telegram |
-| **TelegramListener** | Recebe e processa seus comandos |
-| **Formatador** | Polida a resposta antes de postar |
+| Agente | Arquivo | Função |
+|--------|---------|--------|
+| Orquestrador | `agents/orquestrador.py` | Coordena o fluxo completo |
+| Monitor | `agents/monitor.py` | Busca perguntas novas via API ML |
+| Analisador | `agents/analisador.py` | Classifica intenção com Claude |
+| Especialista | `agents/especialista.py` | Monta contexto da base de conhecimento |
+| Respondedor | `agents/respondedor.py` | Gera resposta e posta se confiança ≥ 75% |
+| Escalador | `agents/escalador.py` | Notifica via Telegram quando confiança baixa |
+| TelegramListener | `agents/telegram_listener.py` | Processa comandos do Telegram |
+| Formatador | `agents/formatador.py` | Saudação por horário + polimento da resposta |
+| Pendentes | `agents/pendentes.py` | Persiste interações aguardando resposta |
+| Memória | `agents/memoria.py` | Salva exemplos aprovados para aprendizado |
 
-### Follow-up
+### Agentes de follow-up
 
-| Agente | Função |
-|--------|--------|
-| **Enviador** | Processa eventos de compra, envio e entrega |
-| **Gerador** | Gera mensagens personalizadas com Claude |
-| **Enviados** | Evita enviar a mesma mensagem duas vezes |
+| Agente | Arquivo | Função |
+|--------|---------|--------|
+| Enviador | `agents/enviador.py` | Processa eventos compra / envio / entrega |
+| Gerador | `agents/gerador.py` | Gera mensagens com Claude + templates |
+| Enviados | `agents/enviados.py` | Evita mensagens duplicadas |
 
 ---
 
 ## Base de conhecimento
 
-Edite os arquivos em `base_conhecimento/` antes de ir para produção:
+Preencha antes de ir para produção:
 
 | Arquivo | Conteúdo |
 |---------|----------|
-| `produtos.md` | Especificações dos produtos |
-| `faq.md` | Perguntas frequentes |
-| `garantia.md` | Política de garantia e devolução |
-| `instalacao.md` | Guia de instalação |
+| `base_conhecimento/produtos.md` | Especificações técnicas dos produtos |
+| `base_conhecimento/faq.md` | Perguntas frequentes com respostas |
+| `base_conhecimento/garantia.md` | Política de garantia e devolução |
+| `base_conhecimento/instalacao.md` | Guias de instalação por produto |
+| `base_conhecimento/politicas.md` | Cancelamento, NF, prazos de resposta |
 
-E os templates em `templates/` para personalizar as mensagens de follow-up:
+Templates para follow-up:
 
 | Arquivo | Quando é usado |
 |---------|----------------|
-| `compra.md` | Pedido confirmado |
-| `envio.md` | Produto enviado |
-| `entrega.md` | Produto entregue |
+| `templates/compra.md` | Pedido confirmado |
+| `templates/envio.md` | Produto enviado |
+| `templates/entrega.md` | Produto entregue |
+
+> `base_conhecimento/memoria.json` e `pendentes.json` são gerados automaticamente — não edite manualmente.
 
 ---
 
 ## Configuração
 
-### 1. Clone o repositório
+### 1. Clone e instale
 
 ```bash
 git clone https://github.com/Browsher/ML-Pos-Venda.git
 cd ML-Pos-Venda
-```
-
-### 2. Instale as dependências
-
-```bash
 uv sync
 ```
 
-### 3. Configure as variáveis de ambiente
+### 2. Variáveis de ambiente
 
 Crie um `.env` na raiz:
 
 ```env
+# Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 
+# Mercado Livre
 ML_CLIENT_ID=
 ML_CLIENT_SECRET=
 ML_REFRESH_TOKEN=
 ML_SELLER_ID=
+ML_REDIRECT_URI=https://sua-url.railway.app/callback
 
+# Telegram
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 
+# Sistema (opcionais)
 CONFIANCA_MINIMA=0.75
 POLLING_INTERVAL_SEGUNDOS=60
 ```
 
-### 4. Rode os testes
+### 3. Testes
 
 ```bash
 uv run python -m pytest tests/ -v
 ```
 
-### 5. Inicie o servidor
+### 4. Inicie
 
 ```bash
 uv run python main.py
@@ -146,30 +148,34 @@ uv run python main.py
 
 ---
 
-## Deploy (Railway)
+## Deploy no Railway
 
 1. Crie um projeto no [Railway](https://railway.app) conectando este repositório
 2. Configure as variáveis de ambiente no painel
-3. **Start command**: `uv run python main.py`
-4. No [ML Developer](https://developers.mercadolivre.com.br/devcenter), configure:
-   - **URL de notificação**: `https://sua-url.railway.app/webhook`
-   - **Topics ativos**: `questions`, `messages`, `orders_v2`, `shipments`
+3. **Start command:** `uv run python main.py`
+4. No [ML Developer](https://developers.mercadolivre.com.br/devcenter):
+   - Ative a permissão **"Comunicação pré e pós-venda"** (leitura e escrita)
+   - **URL de notificação:** `https://sua-url.railway.app/webhook`
+   - **Topics ativos:** `questions`, `messages`, `orders_v2`, `shipments`
 
-### Autenticação ML (primeiro acesso)
+### Autenticação OAuth (primeiro acesso)
 
-Acesse no navegador:
+Acesse no navegador para autorizar o app:
 ```
-https://sua-url.railway.app/callback?code=SEU_CODE
+https://auth.mercadolivre.com.br/authorization?response_type=code
+  &client_id=SEU_CLIENT_ID&redirect_uri=https://sua-url.railway.app/callback
 ```
 
-O sistema troca o code pelo token e atualiza o Railway automaticamente.
-A partir daí, o `ML_REFRESH_TOKEN` é renovado sozinho a cada expiração.
+O sistema troca o code pelo token e atualiza o Railway automaticamente. O `ML_REFRESH_TOKEN` é renovado sozinho a cada expiração.
 
 ---
 
 ## Stack
 
-- Python 3.12+ · [uv](https://github.com/astral-sh/uv)
-- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — claude-haiku-4-5
-- [FastAPI](https://fastapi.tiangolo.com/) + uvicorn — servidor webhook
-- [httpx](https://www.python-httpx.org/) — chamadas API ML e Telegram
+| | |
+|-|-|
+| Linguagem | Python 3.12+ · [uv](https://github.com/astral-sh/uv) |
+| IA | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — claude-haiku-4-5 |
+| Servidor | [FastAPI](https://fastapi.tiangolo.com/) + uvicorn |
+| HTTP | [httpx](https://www.python-httpx.org/) |
+| Deploy | [Railway](https://railway.app) |

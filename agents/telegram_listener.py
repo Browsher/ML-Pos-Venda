@@ -63,21 +63,27 @@ class TelegramListener:
             return []
 
     def _processar_resposta(self, texto: str) -> int:
-        """Formato esperado: /r <interacao_id> <resposta>"""
+        """Formato esperado: /r <codigo> <resposta>"""
         partes = texto.split(" ", 2)
         if len(partes) < 3:
             log.warning(f"Formato invalido: {texto}")
-            self._enviar_telegram("Formato invalido. Use: /r <id> <sua resposta>")
+            self._enviar_telegram("Formato invalido. Use: /r <numero> <sua resposta>")
             return 0
 
-        interacao_id = partes[1]
+        try:
+            codigo = int(partes[1])
+        except ValueError:
+            self._enviar_telegram(f"Código inválido: `{partes[1]}`. Use o número que aparece na notificação.")
+            return 0
+
         resposta_bruta = partes[2].strip()
 
-        pendente = self._pendentes.buscar(interacao_id)
-        if not pendente:
-            log.warning(f"Interacao {interacao_id} nao encontrada nos pendentes")
-            self._enviar_telegram(f"ID `{interacao_id}` nao encontrado ou ja respondido.")
+        resultado = self._pendentes.buscar_por_codigo(codigo)
+        if not resultado:
+            self._enviar_telegram(f"Código `{codigo}` não encontrado ou já respondido.")
             return 0
+
+        interacao_id, pendente = resultado
 
         try:
             nome = pendente.get("nome_comprador", "")
@@ -109,9 +115,12 @@ class TelegramListener:
         if not todos:
             self._enviar_telegram("Nenhuma pergunta pendente.")
             return
+
+        linhas = [f"📋 Pendentes: {len(todos)}\n"]
         for iid, p in todos.items():
             tipo = p.get("tipo", "pergunta")
             texto = p.get("texto", "")
+            codigo = p.get("codigo", iid)
             if tipo == "mensagem":
                 order_status = p.get("order_status", "")
                 cabecalho = f"💬 Pós-venda" + (f" | {order_status}" if order_status else "")
@@ -120,48 +129,73 @@ class TelegramListener:
                 if item_id:
                     item_id_fmt = item_id.replace("MLB", "MLB-", 1)
                     link = f"https://produto.mercadolivre.com.br/{item_id_fmt}"
-                    cabecalho = f"❓ Pergunta\n{link}"
+                    cabecalho = f"❓ {link}"
                 else:
                     cabecalho = "❓ Pergunta"
-            msg = (
-                f"{cabecalho}\n\n"
-                f"Comprador: {texto}\n\n"
-                f"/r {iid} sua resposta aqui"
-            )
-            self._enviar_telegram(msg)
+            linhas.append("——————————————")
+            linhas.append(f"{codigo} {cabecalho}")
+            linhas.append(texto)
+            linhas.append(f"/r {codigo}")
+
+        self._enviar_telegram("\n".join(linhas))
 
     def _status(self) -> None:
         todos = self._pendentes.todos()
         total = len(todos)
         memoria = self._memoria.total()
+
+        try:
+            para_enviar = self._ml.contar_pedidos_por_envio("ready_to_ship")
+            em_transito = self._ml.contar_pedidos_por_envio("shipped")
+            reclamacoes = self._ml.contar_reclamacoes_abertas()
+            alerta = " ⚠️" if reclamacoes > 0 else ""
+            pedidos_linha = (
+                f"\n——————————————\n"
+                f"📦 Para enviar: {para_enviar}\n"
+                f"🚚 Em trânsito: {em_transito}\n"
+                f"🔴 Reclamações: {reclamacoes}{alerta}"
+            )
+        except Exception:
+            pedidos_linha = ""
+
         if total == 0:
-            self._enviar_telegram(f"Tudo em dia! Nenhuma pendente.\nBase de conhecimento: {memoria} exemplos.")
+            self._enviar_telegram(
+                f"✅ Tudo em dia!\n\n"
+                f"📚 Base: {memoria} respostas aprovadas."
+                f"{pedidos_linha}"
+            )
         else:
             tipos = {"pergunta": 0, "mensagem": 0}
             for p in todos.values():
                 tipos[p.get("tipo", "pergunta")] += 1
             self._enviar_telegram(
-                f"Pendentes: {total}\n"
-                f"  Perguntas: {tipos['pergunta']}\n"
-                f"  Mensagens: {tipos['mensagem']}\n"
-                f"Base de conhecimento: {memoria} exemplos.\n\n"
+                f"📊 {total} pendentes · {memoria} respostas na base\n"
+                f"——————————————\n"
+                f"❓ Perguntas: {tipos['pergunta']}\n"
+                f"💬 Mensagens: {tipos['mensagem']}"
+                f"{pedidos_linha}\n\n"
                 f"Use /listar para ver detalhes."
             )
 
     def _cancelar(self, texto: str) -> None:
-        """Remove uma pendente sem responder. Formato: /cancelar <id>"""
+        """Remove uma pendente sem responder. Formato: /cancelar <numero>"""
         partes = texto.split(" ", 1)
         if len(partes) < 2 or not partes[1].strip():
-            self._enviar_telegram("Formato invalido. Use: /cancelar <id>")
+            self._enviar_telegram("Formato invalido. Use: /cancelar <numero>")
             return
-        interacao_id = partes[1].strip()
-        pendente = self._pendentes.buscar(interacao_id)
-        if not pendente:
-            self._enviar_telegram(f"ID `{interacao_id}` nao encontrado ou ja respondido.")
+        try:
+            codigo = int(partes[1].strip())
+        except ValueError:
+            self._enviar_telegram(f"Código inválido: `{partes[1].strip()}`.")
             return
+        resultado = self._pendentes.buscar_por_codigo(codigo)
+        if not resultado:
+            self._enviar_telegram(f"Código `{codigo}` não encontrado ou já respondido.")
+            return
+        interacao_id, _ = resultado
         self._pendentes.remover(interacao_id)
-        self._enviar_telegram(f"Pendente `{interacao_id}` removido sem responder.")
-        log.info(f"Pendente {interacao_id} cancelado pelo humano")
+        self._enviar_telegram(f"Pendente `{codigo}` removido sem responder.")
+        log.info(f"Pendente {interacao_id} (codigo={codigo}) cancelado pelo humano")
 
     def _comandos(self) -> None:
         msg = (

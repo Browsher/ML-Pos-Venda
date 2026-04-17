@@ -64,12 +64,14 @@ class Orquestrador:
         Aceita UUID de mensagem (do webhook) ou pack_id diretamente.
         """
         try:
-            # Webhook de mensagens manda UUID — resolve para pack_id
+            # Webhook de mensagens manda UUID hex sem tracos — resolve para pack_id
             pack_id = resource_id
-            if "-" in resource_id:
+            try:
                 msg = self.ml.buscar_mensagem_por_uuid(resource_id)
                 pack_id = str(msg.get("pack_id") or resource_id)
                 log.info(f"UUID {resource_id} resolvido para pack_id={pack_id}")
+            except Exception:
+                log.info(f"resource_id {resource_id} nao e UUID, usando como pack_id direto")
 
             mensagens = self.ml.buscar_mensagens_pack(pack_id)
             # Pega a ultima mensagem do comprador
@@ -94,10 +96,10 @@ class Orquestrador:
             log.error(f"Erro ao processar mensagem pack {pack_id}: {e}")
             self.escalador.escalar_mensagem_simples()
 
-    def _buscar_status_pedido(self, order_id: str) -> str:
+    def _buscar_status_pedido(self, pack_id: str) -> str:
         """Retorna status legivel do pedido: Não enviado / Em trânsito / Entregue / Cancelado."""
         try:
-            pedido = self.ml.buscar_pedido(order_id)
+            pedido = self.ml.buscar_pedido_por_pack(pack_id)
             shipping = pedido.get("shipping", {}) or {}
             ship_status = shipping.get("status", "")
             order_status = pedido.get("status", "")

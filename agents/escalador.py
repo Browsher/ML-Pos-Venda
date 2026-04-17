@@ -18,7 +18,7 @@ class Escalador:
 
     def escalar_mensagem(self, pack_id: str, nome_comprador: str, texto: str, order_status: str = "") -> None:
         """Notifica o humano sobre mensagem(ns) pos-venda de um comprador."""
-        self._pendentes.adicionar(
+        codigo = self._pendentes.adicionar(
             interacao_id=pack_id,
             texto=texto,
             intencao="mensagem_pos_venda",
@@ -27,11 +27,11 @@ class Escalador:
             order_status=order_status,
         )
 
+        status_fmt = f" | {order_status}" if order_status else ""
         msg = (
-            f"💬 Mensagem pos-venda\n"
-            f"Comprador: {nome_comprador}\n\n"
+            f"💬 Pós-venda{status_fmt}\n\n"
             f"{texto}\n\n"
-            f"/r {pack_id} sua resposta aqui"
+            f"/r {codigo}"
         )
 
         self._enviar_telegram(msg)
@@ -64,7 +64,7 @@ class Escalador:
         self._enviar_telegram(msg)
 
     def escalar(self, interacao: Interacao, analise: Analise, resposta: Resposta) -> None:
-        self._pendentes.adicionar(
+        codigo = self._pendentes.adicionar(
             interacao_id=interacao.id,
             texto=interacao.texto,
             intencao=analise.intencao.value,
@@ -77,14 +77,13 @@ class Escalador:
         )
 
         emoji = "🚨" if analise.urgente else "❓"
-        # Converte MLB4342729373 -> MLB-4342729373 (formato da URL do produto)
         item_id_fmt = interacao.item_id.replace("MLB", "MLB-", 1) if interacao.item_id else ""
         item_link = f"https://produto.mercadolivre.com.br/{item_id_fmt}" if item_id_fmt else ""
 
         msg = (
             f"{emoji} {item_link}\n\n"
             f"Comprador: {interacao.texto}\n\n"
-            f"/r {interacao.id} sua resposta aqui"
+            f"/r {codigo}"
         )
 
         self._enviar_telegram(msg)

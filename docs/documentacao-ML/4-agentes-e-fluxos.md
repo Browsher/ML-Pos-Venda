@@ -44,10 +44,13 @@ Webhook ML / Polling
 
 **Resolução de UUID → pack_id:**
 ```python
-# Webhook de messages manda UUID (contém "-"), não pack_id
-if "-" in resource_id:
+# Webhook de messages manda UUID hex sem traços (ex: 0033b582a1474fa98c02d229abcec43c)
+# Sempre tenta resolver via buscar_mensagem_por_uuid; se falhar, usa resource_id como pack_id
+try:
     msg = ml.buscar_mensagem_por_uuid(resource_id)
     pack_id = str(msg.get("pack_id") or resource_id)
+except Exception:
+    pack_id = resource_id  # já era pack_id numérico
 ```
 
 ---

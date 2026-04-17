@@ -23,13 +23,13 @@ def test_envia_mensagem_telegram():
         mock_post.assert_called_once()
 
 
-def test_mensagem_contem_id_e_texto():
+def test_mensagem_contem_codigo_e_texto():
     with patch("agents.escalador.httpx.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200)
         escalador = Escalador()
         escalador.escalar(*_make_cenario())
         body = mock_post.call_args.kwargs["json"]
-        assert "q99" in body["text"]
+        assert "/r " in body["text"]
         assert "Produto com defeito" in body["text"]
 
 
@@ -40,3 +40,48 @@ def test_emoji_urgente_para_urgente():
         escalador.escalar(*_make_cenario(urgente=True))
         body = mock_post.call_args.kwargs["json"]
         assert "🚨" in body["text"]
+
+
+def test_escalar_mensagem_contem_texto_comprador():
+    with patch("agents.escalador.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        escalador = Escalador()
+        escalador.escalar_mensagem(
+            pack_id="2000012546698451",
+            nome_comprador="441782523",
+            texto="Meu produto chegou com defeito",
+            order_status="Em trânsito",
+        )
+        body = mock_post.call_args.kwargs["json"]
+        assert "Meu produto chegou com defeito" in body["text"]
+        assert "/r " in body["text"]
+
+
+def test_escalar_mensagem_mostra_status_pedido():
+    with patch("agents.escalador.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        escalador = Escalador()
+        escalador.escalar_mensagem(
+            pack_id="2000012546698451",
+            nome_comprador="441782523",
+            texto="Quando chega meu pedido?",
+            order_status="Em trânsito",
+        )
+        body = mock_post.call_args.kwargs["json"]
+        assert "Em trânsito" in body["text"]
+        assert "💬 Pós-venda" in body["text"]
+
+
+def test_escalar_mensagem_sem_status():
+    with patch("agents.escalador.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        escalador = Escalador()
+        escalador.escalar_mensagem(
+            pack_id="2000012546698451",
+            nome_comprador="441782523",
+            texto="Obrigado pelo produto!",
+            order_status="",
+        )
+        body = mock_post.call_args.kwargs["json"]
+        assert "💬 Pós-venda\n" in body["text"]
+        assert "Obrigado pelo produto!" in body["text"]
