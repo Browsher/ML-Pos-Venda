@@ -86,6 +86,31 @@ class MLClient:
         )
         return data.get("paging", {}).get("total", 0)
 
+    def listar_ship_ids_por_status(self, shipping_status: str) -> list[tuple[str, str]]:
+        """Retorna lista de (order_id, ship_id) para o status de envio dado."""
+        params = {
+            "seller": config.ML_SELLER_ID,
+            "shipping.status": shipping_status,
+            "limit": 200,
+        }
+        data = self._get("/orders/search", **params)
+        return [
+            (str(o["id"]), str(o["shipping"]["id"]))
+            for o in data.get("results", [])
+            if o.get("shipping", {}).get("id")
+        ]
+
+    def buscar_logistic_type(self, ship_id: str) -> str:
+        """Retorna o logistic_type do envio (sem x-format-new)."""
+        try:
+            resp = self._http.get(f"/shipments/{ship_id}", headers=self._headers())
+            if resp.status_code == 401:
+                self._renovar_token()
+                resp = self._http.get(f"/shipments/{ship_id}", headers=self._headers())
+            return resp.json().get("logistic_type") or "outros"
+        except Exception:
+            return "outros"
+
     def contar_pedidos_por_envio(self, shipping_status: str) -> int:
         """Conta pedidos pelo status de envio (ex: ready_to_ship, shipped)."""
         params = {
