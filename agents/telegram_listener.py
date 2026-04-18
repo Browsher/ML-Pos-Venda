@@ -215,6 +215,7 @@ class TelegramListener:
         try:
             para_enviar = self._ml.listar_ship_ids_por_status("ready_to_ship")
             em_transito = self._ml.listar_ship_ids_por_status("shipped")
+            entregues_mes = self._ml.contar_entregues_no_mes()
 
             def contar_por_tipo(ship_ids: list[tuple[str, str]]) -> dict[str, int]:
                 contagem: dict[str, int] = {}
@@ -241,7 +242,8 @@ class TelegramListener:
                 f"📦 Para enviar: {len(para_enviar)}\n"
                 f"{formatar(tipos_enviar)}\n\n"
                 f"🚚 Em trânsito: {len(em_transito)}\n"
-                f"{formatar(tipos_transito)}"
+                f"{formatar(tipos_transito)}\n\n"
+                f"✅ Entregas no mês: {entregues_mes}"
             )
             self._enviar_telegram(msg)
         except Exception as e:
