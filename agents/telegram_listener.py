@@ -1,7 +1,6 @@
 """TelegramListener: recebe respostas do humano via Telegram e processa."""
 import logging
 import httpx
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import config
 from agents.memoria import Memoria
@@ -45,8 +44,6 @@ class TelegramListener:
                 self._status()
             elif texto.startswith("/cancelar "):
                 self._cancelar(texto)
-            elif texto == "/envios":
-                self._envios()
             elif texto == "/comandos":
                 self._comandos()
 
@@ -148,16 +145,9 @@ class TelegramListener:
         memoria = self._memoria.total()
 
         try:
-            para_enviar = self._ml.contar_pedidos_por_envio("ready_to_ship")
-            em_transito = self._ml.contar_pedidos_por_envio("shipped")
             reclamacoes = self._ml.contar_reclamacoes_abertas()
             alerta = " ⚠️" if reclamacoes > 0 else ""
-            pedidos_linha = (
-                f"\n——————————————\n"
-                f"📦 Para enviar: {para_enviar}\n"
-                f"🚚 Em trânsito: {em_transito}\n"
-                f"🔴 Reclamações: {reclamacoes}{alerta}"
-            )
+            pedidos_linha = f"\n——————————————\n🔴 Reclamações: {reclamacoes}{alerta}"
         except Exception:
             pedidos_linha = ""
 
@@ -200,56 +190,6 @@ class TelegramListener:
         self._enviar_telegram(f"Pendente `{codigo}` removido sem responder.")
         log.info(f"Pendente {interacao_id} (codigo={codigo}) cancelado pelo humano")
 
-    _LOGISTIC_LABELS = {
-        "fulfillment":      "Full",
-        "self_service":     "Flex",
-        "xd_drop_off":      "Agência",
-        "xd_cross_docking": "Cross docking",
-        "me2":              "Mercado Envios",
-        "me1":              "Correios",
-        "outros":           "Outros",
-    }
-
-    def _envios(self) -> None:
-        self._enviar_telegram("🔍 Buscando detalhes dos envios, aguarde...")
-        try:
-            para_enviar = self._ml.listar_ship_ids_por_status("ready_to_ship")
-            em_transito = self._ml.listar_ship_ids_por_status("shipped")
-            entregues_mes = self._ml.contar_entregues_no_mes()
-
-            def contar_por_tipo(ship_ids: list[tuple[str, str]]) -> dict[str, int]:
-                contagem: dict[str, int] = {}
-                with ThreadPoolExecutor(max_workers=20) as executor:
-                    futures = {executor.submit(self._ml.buscar_logistic_type, sid): sid for _, sid in ship_ids}
-                    for future in as_completed(futures):
-                        tipo = future.result()
-                        contagem[tipo] = contagem.get(tipo, 0) + 1
-                return contagem
-
-            tipos_enviar  = contar_por_tipo(para_enviar)
-            tipos_transito = contar_por_tipo(em_transito)
-
-            def formatar(contagem: dict[str, int]) -> str:
-                if not contagem:
-                    return "  Nenhum"
-                linhas = []
-                for tipo, qtd in sorted(contagem.items(), key=lambda x: -x[1]):
-                    label = self._LOGISTIC_LABELS.get(tipo, tipo)
-                    linhas.append(f"  {label}: {qtd}")
-                return "\n".join(linhas)
-
-            msg = (
-                f"📦 Para enviar: {len(para_enviar)}\n"
-                f"{formatar(tipos_enviar)}\n\n"
-                f"🚚 Em trânsito: {len(em_transito)}\n"
-                f"{formatar(tipos_transito)}\n\n"
-                f"✅ Entregas no mês: {entregues_mes}"
-            )
-            self._enviar_telegram(msg)
-        except Exception as e:
-            log.error(f"Erro ao buscar envios: {e}")
-            self._enviar_telegram(f"Erro ao buscar envios: {e}")
-
     def _comandos(self) -> None:
         msg = (
             "Comandos disponíveis:\n\n"
@@ -261,8 +201,6 @@ class TelegramListener:
             "  Resumo de pendentes e tamanho da base de conhecimento\n\n"
             "/cancelar <id>\n"
             "  Remove um pendente sem responder (ex: comprador ja resolveu)\n\n"
-            "/envios\n"
-            "  Detalha pedidos para enviar e em trânsito por tipo (Flex, Full, Agência...)\n\n"
             "/comandos\n"
             "  Mostra esta lista"
         )
