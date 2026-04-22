@@ -56,16 +56,15 @@ class Enviador:
             pedido = self._ml.buscar_pedido(order_id)
             dados = self._extrair_dados_pedido(pedido)
             pack_id = str(pedido.get("pack_id") or order_id)
-            if not self._ml.buscar_cap_disponivel(pack_id):
+            cap_other = self._ml.buscar_cap_disponivel(pack_id, "OTHER")
+            cap_invoice = self._ml.buscar_cap_disponivel(pack_id, "SEND_INVOICE_LINK")
+            if not cap_other and not cap_invoice:
                 log.warning(f"CAP indisponivel para pack={pack_id} (entrega {order_id}) — abortando")
                 return
+            option_id = "OTHER" if cap_other else "SEND_INVOICE_LINK"
             mensagem = self._gerador.gerar("entrega", dados)
-            try:
-                self._ml.enviar_followup(pack_id, mensagem)
-            except Exception as e_other:
-                log.warning(f"OTHER bloqueado para pack={pack_id}: {e_other} — tentando SEND_INVOICE_LINK")
-                self._ml.enviar_followup(pack_id, mensagem, option_id="SEND_INVOICE_LINK")
-            log.info(f"Mensagem de entrega enviada para order={order_id}")
+            self._ml.enviar_followup(pack_id, mensagem, option_id=option_id)
+            log.info(f"Mensagem de entrega enviada para order={order_id} option_id={option_id}")
         except Exception as e:
             log.error(f"Erro ao processar entrega {order_id}: {e}")
 

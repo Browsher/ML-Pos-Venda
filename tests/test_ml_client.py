@@ -182,3 +182,18 @@ def test_responder_pergunta_trunca_acima_de_2000_chars():
     corpo = mock_post.call_args.kwargs["json"]
     assert len(corpo["text"]) <= 2000
     assert corpo["text"].endswith("...")
+
+
+def test_buscar_cap_disponivel_envia_tag_post_sale():
+    """buscar_cap_disponivel deve passar tag=post_sale como query param na chamada GET."""
+    cliente = _make_client()
+    resp_ok = MagicMock()
+    resp_ok.status_code = 200
+    resp_ok.json.return_value = [{"option_id": "OTHER", "cap_available": 2}]
+
+    with patch.object(cliente._http, "get", return_value=resp_ok) as mock_get:
+        result = cliente.buscar_cap_disponivel("pack999", "OTHER")
+
+    assert result is True
+    call_kwargs = mock_get.call_args.kwargs
+    assert call_kwargs.get("params", {}).get("tag") == "post_sale"

@@ -237,12 +237,14 @@ class MLClient:
             resp = self._http.get(
                 f"/messages/action_guide/packs/{pack_id}/caps_available",
                 headers=self._headers(),
+                params={"tag": "post_sale"},
             )
             if resp.status_code == 401:
                 self._renovar_token()
                 resp = self._http.get(
                     f"/messages/action_guide/packs/{pack_id}/caps_available",
                     headers=self._headers(),
+                    params={"tag": "post_sale"},
                 )
             if resp.status_code != 200:
                 log.warning(f"buscar_cap_disponivel pack={pack_id} status={resp.status_code} — assumindo disponivel")
