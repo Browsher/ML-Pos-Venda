@@ -13,13 +13,11 @@ from starlette.responses import Response
 
 from config import config
 from agents.orquestrador import Orquestrador
-from agents.enviador import Enviador
 from railway import atualizar_variavel
 
 log = logging.getLogger(__name__)
 
 orq: Orquestrador | None = None
-enviador: Enviador | None = None
 
 
 async def _ciclo_startup():
@@ -47,11 +45,9 @@ async def _loop_telegram():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global orq, enviador
+    global orq
     orq = Orquestrador()
     log.info("Orquestrador iniciado")
-    enviador = Enviador()
-    log.info("Enviador iniciado")
     asyncio.create_task(_ciclo_startup())
     asyncio.create_task(_loop_telegram())
     yield
@@ -141,7 +137,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
             log.info(f"Notificacao duplicada ignorada: _id={notif_id}")
             return {"received": True}
         _notificacoes_vistas[notif_id] = agora
-    log.info(f"Webhook recebido: topic={payload.get("topic")} resource={payload.get("resource")} id={payload.get("_id","")[:8]}")
+    log.info(f"Webhook recebido: topic={payload.get('topic')} resource={payload.get('resource')} id={payload.get('_id','')[:8]}")
     background_tasks.add_task(processar_notificacao, payload)
     return {"received": True}
 
@@ -158,12 +154,6 @@ async def processar_notificacao(payload: dict):
         elif topic == "messages":
             log.info(f"Mensagem recebida uuid={resource_id} — aguardando 8s")
             _agendar_processamento_mensagem(resource_id)
-        elif topic == "orders_v2":
-            log.info(f"Pedido recebido id={resource_id}")
-            _processar_order(resource_id)
-        elif topic == "shipments":
-            log.info(f"Envio recebido id={resource_id}")
-            _processar_shipment(resource_id)
     except Exception as e:
         log.error(f"Erro ao processar notificacao: {e}")
 
@@ -196,31 +186,6 @@ async def _processar_mensagem_apos_delay(pack_id: str) -> None:
             if tentativa < tentativas:
                 await asyncio.sleep(intervalo)
     _debounce_tasks.pop(pack_id, None)
-
-
-def _processar_order(order_id: str) -> None:
-    try:
-        pedido = enviador._ml.buscar_pedido(order_id)
-        if pedido.get("status") == "paid":
-            enviador.processar_compra(order_id)
-    except Exception as e:
-        log.error(f"Erro ao processar order {order_id}: {e}")
-
-
-def _processar_shipment(shipment_id: str) -> None:
-    try:
-        envio = enviador._ml.buscar_envio(shipment_id)
-        status = envio.get("status", "")
-        order_id = enviador._ml.buscar_order_id_por_shipment(shipment_id)
-        if not order_id:
-            log.error(f"Impossivel obter order_id do shipment {shipment_id}, abortando")
-            return
-        if status == "shipped":
-            enviador.processar_envio(order_id, shipment_id)
-        elif status == "delivered":
-            enviador.processar_entrega(order_id)
-    except Exception as e:
-        log.error(f"Erro ao processar shipment {shipment_id}: {e}")
 
 
 def run():
