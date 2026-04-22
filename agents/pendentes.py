@@ -21,16 +21,14 @@ class Pendentes:
             encoding="utf-8",
         )
 
-    def _proximo_codigo(self) -> int:
-        dados = self._carregar()
-        codigos = [v.get("codigo", 0) for v in dados.values() if isinstance(v.get("codigo"), int)]
-        return max(codigos, default=0) + 1
+    def _proximo_codigo(self, dados: dict) -> int:
+        return max((v["codigo"] for v in dados.values() if isinstance(v.get("codigo"), int)), default=0) + 1
 
     def adicionar(self, interacao_id: str, texto: str, intencao: str, tipo: str,
                   nome_comprador: str = "", titulo_item: str = "", item_id: str = "",
                   order_status: str = "", sugestao: str = "", confianca: float = 0.0) -> int:
         self._dados = self._carregar()
-        codigo = self._proximo_codigo()
+        codigo = self._proximo_codigo(self._dados)
         self._dados[interacao_id] = {
             "codigo": codigo,
             "texto": texto,

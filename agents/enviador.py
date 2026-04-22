@@ -27,17 +27,7 @@ class Enviador:
             cap = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
             dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("compra", dados)
-            if cap == CapStatus.DISPONIVEL:
-                self._ml.enviar_followup(pack_id_str, mensagem)
-                log.info(f"Mensagem de compra enviada para order={order_id}")
-            elif cap == CapStatus.CONVERSA_BLOQUEADA:
-                log.info(f"Conversa bloqueada para pack={pack_id_str} (compra {order_id}), usando endpoint convencional")
-                self._ml.responder_mensagem(pack_id_str, mensagem)
-                log.info(f"Mensagem de compra (convencional) enviada para order={order_id}")
-            elif cap == CapStatus.INDISPONIVEL:
-                log.info(f"CAP indisponivel para pack={pack_id_str} (compra {order_id}) — pulando follow-up")
-            elif cap == CapStatus.ACESSO_NEGADO:
-                log.warning(f"Acesso negado ao pack={pack_id_str} (compra {order_id}) — pulando follow-up")
+            self._enviar_por_cap(pack_id_str, mensagem, cap, "compra", order_id)
         except Exception as e:
             log.error(f"Erro ao processar compra {order_id}: {e}")
 
@@ -55,17 +45,7 @@ class Enviador:
             cap = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
             dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("envio", dados)
-            if cap == CapStatus.DISPONIVEL:
-                self._ml.enviar_followup(pack_id_str, mensagem)
-                log.info(f"Mensagem de envio enviada para order={order_id}")
-            elif cap == CapStatus.CONVERSA_BLOQUEADA:
-                log.info(f"Conversa bloqueada para pack={pack_id_str} (envio {order_id}), usando endpoint convencional")
-                self._ml.responder_mensagem(pack_id_str, mensagem)
-                log.info(f"Mensagem de envio (convencional) enviada para order={order_id}")
-            elif cap == CapStatus.INDISPONIVEL:
-                log.info(f"CAP indisponivel para pack={pack_id_str} (envio {order_id}) — pulando follow-up")
-            elif cap == CapStatus.ACESSO_NEGADO:
-                log.warning(f"Acesso negado ao pack={pack_id_str} (envio {order_id}) — pulando follow-up")
+            self._enviar_por_cap(pack_id_str, mensagem, cap, "envio", order_id)
         except Exception as e:
             log.error(f"Erro ao processar envio {order_id}: {e}")
 
@@ -83,24 +63,28 @@ class Enviador:
             cap_other = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
             dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("entrega", dados)
-            if cap_other == CapStatus.DISPONIVEL:
-                self._ml.enviar_followup(pack_id_str, mensagem, option_id="OTHER")
-                log.info(f"Mensagem de entrega enviada para order={order_id} option_id=OTHER")
-            elif cap_other == CapStatus.CONVERSA_BLOQUEADA:
-                log.info(f"Conversa bloqueada para pack={pack_id_str} (entrega {order_id}), usando endpoint convencional")
-                self._ml.responder_mensagem(pack_id_str, mensagem)
-                log.info(f"Mensagem de entrega (convencional) enviada para order={order_id}")
-            elif cap_other == CapStatus.ACESSO_NEGADO:
-                log.warning(f"Acesso negado ao pack={pack_id_str} (entrega {order_id}) — pulando follow-up")
-            elif cap_other == CapStatus.INDISPONIVEL:
+            if cap_other == CapStatus.INDISPONIVEL:
                 cap_invoice = self._ml.buscar_cap_disponivel(pack_id_str, "SEND_INVOICE_LINK")
-                if cap_invoice == CapStatus.DISPONIVEL:
-                    self._ml.enviar_followup(pack_id_str, mensagem, option_id="SEND_INVOICE_LINK")
-                    log.info(f"Mensagem de entrega enviada para order={order_id} option_id=SEND_INVOICE_LINK")
-                else:
-                    log.info(f"CAP indisponivel para pack={pack_id_str} (entrega {order_id}, OTHER e SEND_INVOICE_LINK) — pulando follow-up")
+                self._enviar_por_cap(pack_id_str, mensagem, cap_invoice, "entrega", order_id, "SEND_INVOICE_LINK")
+            else:
+                self._enviar_por_cap(pack_id_str, mensagem, cap_other, "entrega", order_id, "OTHER")
         except Exception as e:
             log.error(f"Erro ao processar entrega {order_id}: {e}")
+
+    def _enviar_por_cap(self, pack_id: str, mensagem: str, cap: CapStatus, evento: str, order_id: str, option_id: str = "OTHER") -> None:
+        if cap == CapStatus.DISPONIVEL:
+            self._ml.enviar_followup(pack_id, mensagem, option_id=option_id)
+            self._enviados.verificar_e_marcar(order_id, evento)
+            log.info(f"Mensagem de {evento} enviada para order={order_id}")
+        elif cap == CapStatus.CONVERSA_BLOQUEADA:
+            log.info(f"Conversa bloqueada para pack={pack_id}, usando endpoint convencional")
+            self._ml.responder_mensagem(pack_id, mensagem)
+            self._enviados.verificar_e_marcar(order_id, evento)
+            log.info(f"Mensagem de {evento} enviada via convencional para order={order_id}")
+        elif cap == CapStatus.INDISPONIVEL:
+            log.info(f"CAP indisponivel para pack={pack_id} ({evento} {order_id}) — pulando")
+        elif cap == CapStatus.ACESSO_NEGADO:
+            log.warning(f"Acesso negado ao pack={pack_id} ({evento} {order_id}) — pulando")
 
     def _extrair_dados_pedido(self, pedido: dict, order_id: str) -> dict:
         itens = pedido.get("order_items", [])
