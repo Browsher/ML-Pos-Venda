@@ -4,13 +4,20 @@ Suporta dois modos:
 - Com ML_REFRESH_TOKEN: renova automaticamente
 - Com ML_ACCESS_TOKEN: usa direto (expira em 6h — rodar auth_ml.py para renovar)
 """
+import json
 import logging
+import os
 import httpx
 from config import config
 from railway import atualizar_variavel
 
 log = logging.getLogger(__name__)
 
+
+
+_TOKEN_BACKUP_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "refresh_token_backup.json"
+)
 
 class TokenExpiradoError(Exception):
     """Levantado quando o access_token expirou e nao ha refresh_token disponivel."""
@@ -39,8 +46,24 @@ class MLClient:
             if data.get("refresh_token"):
                 config.ML_REFRESH_TOKEN = data["refresh_token"]
                 log.info("Refresh token renovado — atualizando no Railway...")
-                atualizar_variavel("ML_REFRESH_TOKEN", data["refresh_token"])
+                railway_ok = atualizar_variavel("ML_REFRESH_TOKEN", data["refresh_token"])
                 atualizar_variavel("ML_ACCESS_TOKEN", data["access_token"])
+                # [FIX #3] Fallback local: salva tokens se Railway falhar
+                if not railway_ok:
+                    log.warning("Railway falhou — salvando tokens em backup local")
+                    try:
+                        os.makedirs(os.path.dirname(_TOKEN_BACKUP_PATH), exist_ok=True)
+                        with open(_TOKEN_BACKUP_PATH, 'w') as f_bkp:
+                            json.dump(
+                                {
+                                    "ML_REFRESH_TOKEN": data["refresh_token"],
+                                    "ML_ACCESS_TOKEN": data["access_token"],
+                                },
+                                f_bkp,
+                            )
+                        log.info(f"Tokens salvos em backup local: {_TOKEN_BACKUP_PATH}")
+                    except Exception as backup_err:
+                        log.error(f"Falha ao salvar backup local dos tokens: {backup_err}")
         else:
             raise TokenExpiradoError(
                 "Access token expirado e ML_REFRESH_TOKEN nao configurado. "
@@ -173,15 +196,46 @@ class MLClient:
         return resp.json()
 
     # ID do agente de mensageria ML para Brasil (obrigatorio desde fev/2026)
-    _ML_AGENT_ID = 3037675074
+    _ML_AGENT_ID = "3037675074"
 
-    def enviar_followup(self, pack_id: str, texto: str) -> dict:
+    def buscar_cap_disponivel(self, pack_id: str, option_id: str = "OTHER") -> bool:
+        """Verifica se o CAP esta disponivel para o pack e option_id informado.
+        Endpoint: GET /messages/action_guide/packs/{pack_id}/caps_available
+        Retorna True em caso de erro para nao bloquear o fluxo.
+        """
+        try:
+            resp = self._http.get(
+                f"/messages/action_guide/packs/{pack_id}/caps_available",
+                headers=self._headers(),
+            )
+            if resp.status_code == 401:
+                self._renovar_token()
+                resp = self._http.get(
+                    f"/messages/action_guide/packs/{pack_id}/caps_available",
+                    headers=self._headers(),
+                )
+            if resp.status_code != 200:
+                log.warning(f"buscar_cap_disponivel pack={pack_id} status={resp.status_code} — assumindo disponivel")
+                return True
+            caps = resp.json()
+            for item in caps:
+                if item.get("option_id") == option_id:
+                    available = item.get("cap_available", 0) > 0
+                    log.info(f"buscar_cap_disponivel pack={pack_id} option_id={option_id} cap_available={item.get('cap_available')} disponivel={available}")
+                    return available
+            log.warning(f"buscar_cap_disponivel pack={pack_id} option_id={option_id} nao encontrado na resposta — assumindo disponivel")
+            return True
+        except Exception as e:
+            log.warning(f"buscar_cap_disponivel pack={pack_id} erro={e} — assumindo disponivel")
+            return True
+
+    def enviar_followup(self, pack_id: str, texto: str, option_id: str = "OTHER") -> dict:
         """Envia mensagem proativa de follow-up (compra/envio/entrega) via Action Guide."""
         if len(texto) > 350:
             texto = texto[:347] + "..."
         return self._post(
             f"/messages/action_guide/packs/{pack_id}/option",
-            {"option_id": "OTHER", "text": texto},
+            {"option_id": option_id, "text": texto},
             tag="post_sale",
         )
 
@@ -192,6 +246,7 @@ class MLClient:
             "/questions/search",
             seller_id=config.ML_SELLER_ID,
             status="UNANSWERED",
+            api_version=4,
         )
         return data.get("questions", [])
 
@@ -222,7 +277,7 @@ class MLClient:
         return self._post(
             f"/messages/packs/{pack_id}/sellers/{config.ML_SELLER_ID}",
             {
-                "from": {"user_id": int(config.ML_SELLER_ID)},
+                "from": {"user_id": str(config.ML_SELLER_ID)},
                 "to": {"user_id": self._ML_AGENT_ID},
                 "text": texto,
             },

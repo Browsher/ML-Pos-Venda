@@ -23,9 +23,13 @@ class Enviador:
             if not pack_id:
                 log.info(f"Compra {order_id} sem pack_id ainda — follow-up sera enviado no evento de envio")
                 return
+            pack_id_str = str(pack_id)
+            if not self._ml.buscar_cap_disponivel(pack_id_str):
+                log.warning(f"CAP indisponivel para pack={pack_id_str} (compra {order_id}) — abortando")
+                return
             dados = self._extrair_dados_pedido(pedido)
             mensagem = self._gerador.gerar("compra", dados)
-            self._ml.enviar_followup(str(pack_id), mensagem)
+            self._ml.enviar_followup(pack_id_str, mensagem)
             self._enviados.marcar(order_id, "compra")
             log.info(f"Mensagem de compra enviada para order={order_id}")
         except Exception as e:
@@ -39,6 +43,9 @@ class Enviador:
             pedido = self._ml.buscar_pedido(order_id)
             dados = self._extrair_dados_pedido(pedido)
             pack_id = str(pedido.get("pack_id") or order_id)
+            if not self._ml.buscar_cap_disponivel(pack_id):
+                log.warning(f"CAP indisponivel para pack={pack_id} (envio {order_id}) — abortando")
+                return
             mensagem = self._gerador.gerar("envio", dados)
             self._ml.enviar_followup(pack_id, mensagem)
             self._enviados.marcar(order_id, "envio")
@@ -54,8 +61,15 @@ class Enviador:
             pedido = self._ml.buscar_pedido(order_id)
             dados = self._extrair_dados_pedido(pedido)
             pack_id = str(pedido.get("pack_id") or order_id)
+            if not self._ml.buscar_cap_disponivel(pack_id):
+                log.warning(f"CAP indisponivel para pack={pack_id} (entrega {order_id}) — abortando")
+                return
             mensagem = self._gerador.gerar("entrega", dados)
-            self._ml.enviar_followup(pack_id, mensagem)
+            try:
+                self._ml.enviar_followup(pack_id, mensagem)
+            except Exception as e_other:
+                log.warning(f"OTHER bloqueado para pack={pack_id}: {e_other} — tentando SEND_INVOICE_LINK")
+                self._ml.enviar_followup(pack_id, mensagem, option_id="SEND_INVOICE_LINK")
             self._enviados.marcar(order_id, "entrega")
             log.info(f"Mensagem de entrega enviada para order={order_id}")
         except Exception as e:

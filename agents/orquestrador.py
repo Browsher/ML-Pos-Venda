@@ -82,7 +82,11 @@ class Orquestrador:
                 from_info = msg.get("from", {})
                 remetente = str(from_info.get("user_id", ""))
                 if remetente != str(config.ML_SELLER_ID):
-                    texto = str(msg.get("text", ""))
+                    raw_text = msg.get("text", "")
+                    if isinstance(raw_text, dict):
+                        texto = raw_text.get("plain", "") or str(raw_text)
+                    else:
+                        texto = str(raw_text)
                     nome_comprador = remetente
                     log.info(f"pack={pack_id} mensagem do comprador={remetente}: '{texto[:60]}'")
                     break

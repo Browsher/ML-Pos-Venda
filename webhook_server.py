@@ -7,6 +7,8 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from config import config
 from agents.orquestrador import Orquestrador
@@ -55,6 +57,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+ML_IPS_PERMITIDOS = {
+    "54.88.218.97",
+    "18.215.140.160",
+    "18.213.114.129",
+    "18.206.34.84",
+}
+
+class FiltroIPWebhook(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and request.url.path == "/webhook":
+            forwarded_for = request.headers.get("X-Forwarded-For", "")
+            if forwarded_for:
+                ip = forwarded_for.split(",")[0].strip()
+            else:
+                ip = request.client.host if request.client else ""
+            if ip not in ML_IPS_PERMITIDOS:
+                log.warning(f"Webhook bloqueado — IP nao autorizado: {ip}")
+                return Response(content="Forbidden", status_code=403)
+        return await call_next(request)
+
+app.add_middleware(FiltroIPWebhook)
 
 
 @app.get("/")
