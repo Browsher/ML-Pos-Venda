@@ -19,7 +19,7 @@ class CapStatus(Enum):
     """Status retornado por buscar_cap_disponivel."""
     DISPONIVEL = "disponivel"
     INDISPONIVEL = "indisponivel"       # array vazio ou cap=0
-    CONVERSA_BLOQUEADA = "bloqueada"   # 403 com "blocked" no body
+    CONVERSA_BLOQUEADA = "bloqueada"   # 403 com "blocked" no body — endpoint convencional tambem bloqueado
     ACESSO_NEGADO = "negado"           # 403 sem "blocked"
 
 

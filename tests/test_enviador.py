@@ -96,15 +96,13 @@ def test_processar_entrega_ambos_bloqueados_aborta():
 
 # --- Testes de CONVERSA_BLOQUEADA e ACESSO_NEGADO ---
 
-def test_processar_compra_conversa_bloqueada_usa_endpoint_convencional():
-    """processar_compra com CONVERSA_BLOQUEADA usa responder_mensagem como fallback."""
+def test_processar_compra_conversa_bloqueada_pula_followup():
+    """processar_compra com CONVERSA_BLOQUEADA nao envia nada (endpoint convencional tambem bloqueado)."""
     env = _make_enviador(pack_id=888, order_id="777")
     env._ml.buscar_cap_disponivel.return_value = CapStatus.CONVERSA_BLOQUEADA
     env.processar_compra("777")
     env._ml.enviar_followup.assert_not_called()
-    env._ml.responder_mensagem.assert_called_once()
-    args, _ = env._ml.responder_mensagem.call_args
-    assert args[0] == "888"
+    env._ml.responder_mensagem.assert_not_called()
 
 
 def test_processar_compra_acesso_negado_pula_followup():
@@ -116,15 +114,13 @@ def test_processar_compra_acesso_negado_pula_followup():
     env._ml.responder_mensagem.assert_not_called()
 
 
-def test_processar_envio_conversa_bloqueada_usa_endpoint_convencional():
-    """processar_envio com CONVERSA_BLOQUEADA usa responder_mensagem como fallback."""
+def test_processar_envio_conversa_bloqueada_pula_followup():
+    """processar_envio com CONVERSA_BLOQUEADA nao envia nada (endpoint convencional tambem bloqueado)."""
     env = _make_enviador(pack_id=888, order_id="777")
     env._ml.buscar_cap_disponivel.return_value = CapStatus.CONVERSA_BLOQUEADA
     env.processar_envio("777", "ship_abc")
     env._ml.enviar_followup.assert_not_called()
-    env._ml.responder_mensagem.assert_called_once()
-    args, _ = env._ml.responder_mensagem.call_args
-    assert args[0] == "888"
+    env._ml.responder_mensagem.assert_not_called()
 
 
 def test_processar_envio_acesso_negado_pula_followup():
@@ -136,15 +132,13 @@ def test_processar_envio_acesso_negado_pula_followup():
     env._ml.responder_mensagem.assert_not_called()
 
 
-def test_processar_entrega_conversa_bloqueada_usa_endpoint_convencional():
-    """processar_entrega com CONVERSA_BLOQUEADA usa responder_mensagem como fallback."""
+def test_processar_entrega_conversa_bloqueada_pula_followup():
+    """processar_entrega com CONVERSA_BLOQUEADA nao envia nada (endpoint convencional tambem bloqueado)."""
     env = _make_enviador(pack_id=888, order_id="777")
     env._ml.buscar_cap_disponivel.return_value = CapStatus.CONVERSA_BLOQUEADA
     env.processar_entrega("777")
     env._ml.enviar_followup.assert_not_called()
-    env._ml.responder_mensagem.assert_called_once()
-    args, _ = env._ml.responder_mensagem.call_args
-    assert args[0] == "888"
+    env._ml.responder_mensagem.assert_not_called()
 
 
 def test_processar_entrega_acesso_negado_pula_followup():

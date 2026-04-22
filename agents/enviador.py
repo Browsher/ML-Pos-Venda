@@ -77,10 +77,7 @@ class Enviador:
             self._enviados.verificar_e_marcar(order_id, evento)
             log.info(f"Mensagem de {evento} enviada para order={order_id}")
         elif cap == CapStatus.CONVERSA_BLOQUEADA:
-            log.info(f"Conversa bloqueada para pack={pack_id}, usando endpoint convencional")
-            self._ml.responder_mensagem(pack_id, mensagem)
-            self._enviados.verificar_e_marcar(order_id, evento)
-            log.info(f"Mensagem de {evento} enviada via convencional para order={order_id}")
+            log.info(f"Conversa bloqueada para pack={pack_id} ({evento} {order_id}) — endpoint convencional tambem bloqueado, pulando")
         elif cap == CapStatus.INDISPONIVEL:
             log.info(f"CAP indisponivel para pack={pack_id} ({evento} {order_id}) — pulando")
         elif cap == CapStatus.ACESSO_NEGADO:
