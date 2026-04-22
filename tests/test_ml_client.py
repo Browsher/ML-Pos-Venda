@@ -197,3 +197,42 @@ def test_buscar_cap_disponivel_envia_tag_post_sale():
     assert result is True
     call_kwargs = mock_get.call_args.kwargs
     assert call_kwargs.get("params", {}).get("tag") == "post_sale"
+
+
+# --- Testes de buscar_nome_comprador ---
+
+def test_buscar_nome_comprador_usa_first_name():
+    """Retorna first_name do pedido quando disponivel."""
+    cliente = _make_client()
+    pedido = {"buyer": {"first_name": "Grasielly", "nickname": "GRASIELLYCLARA20221125204534"}}
+    result = cliente.buscar_nome_comprador("123", pedido)
+    assert result == "Grasielly"
+
+
+def test_buscar_nome_comprador_usa_billing_info_quando_sem_first_name():
+    """Quando first_name vazio, usa billing_info.name via API."""
+    cliente = _make_client()
+    pedido = {"buyer": {"first_name": "", "nickname": "GRASIELLYCLARA20221125204534"}}
+
+    resp_ok = MagicMock()
+    resp_ok.status_code = 200
+    resp_ok.json.return_value = {
+        "buyer": {"billing_info": {"name": "Grasielly Clara"}}
+    }
+    resp_ok.raise_for_status = MagicMock()
+
+    with patch.object(cliente._http, "get", return_value=resp_ok):
+        result = cliente.buscar_nome_comprador("123", pedido)
+
+    assert result == "Grasielly Clara"
+
+
+def test_buscar_nome_comprador_limpa_sufixo_numerico_do_nickname():
+    """Quando first_name e billing_info falham, limpa sufixo numerico do nickname."""
+    cliente = _make_client()
+    pedido = {"buyer": {"first_name": "", "nickname": "GRASIELLYCLARA20221125204534"}}
+
+    with patch.object(cliente, "_get", side_effect=Exception("API indisponivel")):
+        result = cliente.buscar_nome_comprador("123", pedido)
+
+    assert result == "Grasiellyclara"

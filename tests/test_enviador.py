@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from agents.enviador import Enviador
 
 
-def _make_enviador(pack_id, order_id):
+def _make_enviador(pack_id, order_id, first_name="Comprador"):
     env = Enviador.__new__(Enviador)
     env._ml = MagicMock()
     env._gerador = MagicMock()
@@ -14,20 +14,36 @@ def _make_enviador(pack_id, order_id):
     env._ml.buscar_pedido.return_value = {
         "pack_id": pack_id,
         "id": order_id,
-        "buyer": {"nickname": "COMPRADOR_TESTE"},
+        "buyer": {"nickname": "COMPRADOR_TESTE", "first_name": first_name},
         "order_items": [{"item": {"title": "Camera de Seguranca"}}],
     }
     env._ml.buscar_cap_disponivel.return_value = True
+    env._ml.buscar_nome_comprador.return_value = first_name or "Comprador"
     env._gerador.gerar.return_value = "Mensagem teste"
     return env
 
 
-def test_processar_compra_sem_pack_id_usa_order_id():
+# --- Fix 1: pack_id None pula follow-up ---
+
+def test_processar_compra_sem_pack_id_pula_followup():
+    """processar_compra com pack_id=None nao tenta enviar via Action Guide."""
     env = _make_enviador(pack_id=None, order_id="777")
     env.processar_compra("777")
-    env._ml.enviar_followup.assert_called_once()
-    args, _ = env._ml.enviar_followup.call_args
-    assert args[0] == "777"
+    env._ml.enviar_followup.assert_not_called()
+
+
+def test_processar_envio_sem_pack_id_pula_followup():
+    """processar_envio com pack_id=None nao tenta enviar via Action Guide."""
+    env = _make_enviador(pack_id=None, order_id="777")
+    env.processar_envio("777", "shipment_abc")
+    env._ml.enviar_followup.assert_not_called()
+
+
+def test_processar_entrega_sem_pack_id_pula_followup():
+    """processar_entrega com pack_id=None nao tenta enviar via Action Guide."""
+    env = _make_enviador(pack_id=None, order_id="777")
+    env.processar_entrega("777")
+    env._ml.enviar_followup.assert_not_called()
 
 
 def test_processar_compra_com_pack_id_usa_pack_id():

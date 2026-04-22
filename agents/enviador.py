@@ -20,11 +20,14 @@ class Enviador:
         try:
             pedido = self._ml.buscar_pedido(order_id)
             pack_id = pedido.get("pack_id")
-            pack_id_str = str(pack_id) if pack_id else str(order_id)
+            if not pack_id:
+                log.info(f"Compra {order_id} sem pack_id — Action Guide nao suporta order_id, pulando follow-up")
+                return
+            pack_id_str = str(pack_id)
             if not self._ml.buscar_cap_disponivel(pack_id_str):
                 log.warning(f"CAP indisponivel para pack={pack_id_str} (compra {order_id}) — abortando")
                 return
-            dados = self._extrair_dados_pedido(pedido)
+            dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("compra", dados)
             self._ml.enviar_followup(pack_id_str, mensagem)
             log.info(f"Mensagem de compra enviada para order={order_id}")
@@ -37,13 +40,17 @@ class Enviador:
             return
         try:
             pedido = self._ml.buscar_pedido(order_id)
-            dados = self._extrair_dados_pedido(pedido)
-            pack_id = str(pedido.get("pack_id") or order_id)
-            if not self._ml.buscar_cap_disponivel(pack_id):
-                log.warning(f"CAP indisponivel para pack={pack_id} (envio {order_id}) — abortando")
+            pack_id = pedido.get("pack_id")
+            if not pack_id:
+                log.info(f"Envio {order_id} sem pack_id — Action Guide nao suporta order_id, pulando follow-up")
                 return
+            pack_id_str = str(pack_id)
+            if not self._ml.buscar_cap_disponivel(pack_id_str):
+                log.warning(f"CAP indisponivel para pack={pack_id_str} (envio {order_id}) — abortando")
+                return
+            dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("envio", dados)
-            self._ml.enviar_followup(pack_id, mensagem)
+            self._ml.enviar_followup(pack_id_str, mensagem)
             log.info(f"Mensagem de envio enviada para order={order_id}")
         except Exception as e:
             log.error(f"Erro ao processar envio {order_id}: {e}")
@@ -54,26 +61,30 @@ class Enviador:
             return
         try:
             pedido = self._ml.buscar_pedido(order_id)
-            dados = self._extrair_dados_pedido(pedido)
-            pack_id = str(pedido.get("pack_id") or order_id)
-            cap_other = self._ml.buscar_cap_disponivel(pack_id, "OTHER")
-            cap_invoice = self._ml.buscar_cap_disponivel(pack_id, "SEND_INVOICE_LINK")
+            pack_id = pedido.get("pack_id")
+            if not pack_id:
+                log.info(f"Entrega {order_id} sem pack_id — Action Guide nao suporta order_id, pulando follow-up")
+                return
+            pack_id_str = str(pack_id)
+            cap_other = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
+            cap_invoice = self._ml.buscar_cap_disponivel(pack_id_str, "SEND_INVOICE_LINK")
             if not cap_other and not cap_invoice:
-                log.warning(f"CAP indisponivel para pack={pack_id} (entrega {order_id}) — abortando")
+                log.warning(f"CAP indisponivel para pack={pack_id_str} (entrega {order_id}) — abortando")
                 return
             option_id = "OTHER" if cap_other else "SEND_INVOICE_LINK"
+            dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("entrega", dados)
-            self._ml.enviar_followup(pack_id, mensagem, option_id=option_id)
+            self._ml.enviar_followup(pack_id_str, mensagem, option_id=option_id)
             log.info(f"Mensagem de entrega enviada para order={order_id} option_id={option_id}")
         except Exception as e:
             log.error(f"Erro ao processar entrega {order_id}: {e}")
 
-    def _extrair_dados_pedido(self, pedido: dict) -> dict:
-        comprador = pedido.get("buyer", {})
+    def _extrair_dados_pedido(self, pedido: dict, order_id: str) -> dict:
         itens = pedido.get("order_items", [])
         produto = itens[0].get("item", {}).get("title", "") if itens else ""
+        nome_comprador = self._ml.buscar_nome_comprador(order_id, pedido)
         return {
-            "nome_comprador": comprador.get("nickname", ""),
+            "nome_comprador": nome_comprador,
             "produto": produto,
             "order_id": str(pedido.get("id", "")),
         }

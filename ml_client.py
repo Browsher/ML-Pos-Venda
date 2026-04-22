@@ -315,3 +315,33 @@ class MLClient:
             },
             tag="post_sale",
         )
+
+    def buscar_nome_comprador(self, order_id: str, pedido: dict) -> str:
+        """Resolve o nome real do comprador em 3 niveis:
+        1. buyer.first_name do pedido (disponivel quando nao e ME2)
+        2. GET /orders/{order_id}/billing_info -> buyer.billing_info.name ou name
+        3. nickname sem sufixo numerico de data (ex: GRASIELLYCLARA20221125 -> Grasiellyclara)
+        Retorna sempre uma string nao vazia.
+        """
+        import re
+        buyer = pedido.get("buyer", {})
+
+        # Nivel 1: first_name direto no pedido
+        first_name = (buyer.get("first_name") or "").strip()
+        if first_name:
+            return first_name
+
+        # Nivel 2: billing_info
+        try:
+            data = self._get(f"/orders/{order_id}/billing_info")
+            billing = data.get("buyer", {}).get("billing_info", {})
+            name = (billing.get("name") or data.get("name") or "").strip()
+            if name:
+                return name
+        except Exception as e:
+            log.warning(f"buscar_nome_comprador billing_info order={order_id} erro={e}")
+
+        # Nivel 3: nickname sem sufixo numerico
+        nickname = buyer.get("nickname", "") or ""
+        clean = re.sub(r'\d+$', '', nickname).title()
+        return clean or nickname
