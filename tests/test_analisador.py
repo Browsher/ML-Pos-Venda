@@ -69,3 +69,35 @@ def test_usa_historico_na_analise(analisador):
     call_args = analisador._client.messages.create.call_args
     prompt = call_args.kwargs["messages"][0]["content"]
     assert "Historico" in prompt
+
+
+def test_fallback_quando_claude_retorna_texto_sem_json(analisador):
+    """Quando Claude nao retorna JSON valido, retorna Intencao.OUTRO com confianca baixa."""
+    mock_msg = MagicMock()
+    mock_msg.content = [MagicMock(text="Desculpe, nao entendi a pergunta.")]
+    analisador._client.messages.create.return_value = mock_msg
+
+    resultado = analisador.analisar(_make_interacao("algum texto"))
+    assert resultado.intencao == Intencao.OUTRO
+
+
+def test_fallback_quando_intencao_nao_existe_no_enum(analisador):
+    """Quando intencao retornada nao existe no Enum, retorna Intencao.OUTRO."""
+    mock_msg = MagicMock()
+    mock_msg.content = [MagicMock(text='{"intencao": "valor_invalido", "resumo": "x", "urgente": false}')]
+    analisador._client.messages.create.return_value = mock_msg
+
+    resultado = analisador.analisar(_make_interacao("algum texto"))
+    assert resultado.intencao == Intencao.OUTRO
+
+
+def test_fallback_usa_texto_como_resumo(analisador):
+    """O resumo do fallback deve conter o inicio do texto da interacao."""
+    mock_msg = MagicMock()
+    mock_msg.content = [MagicMock(text="RESPOSTA SEM JSON ALGUM")]
+    analisador._client.messages.create.return_value = mock_msg
+
+    texto = "Meu produto nao chegou ainda"
+    resultado = analisador.analisar(_make_interacao(texto))
+    assert resultado.resumo == texto[:80]
+    assert resultado.urgente is False

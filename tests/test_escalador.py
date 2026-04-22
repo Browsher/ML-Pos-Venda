@@ -31,6 +31,10 @@ def test_mensagem_contem_codigo_e_texto():
         body = mock_post.call_args.kwargs["json"]
         assert "/r " in body["text"]
         assert "Produto com defeito" in body["text"]
+        # verifica que o token apos /r é um inteiro válido
+        import re
+        match = re.search(r"/r (\S+)", body["text"])
+        assert match and match.group(1).isdigit(), f"Codigo apos /r nao e inteiro: {body['text']}"
 
 
 def test_emoji_urgente_para_urgente():
@@ -85,3 +89,34 @@ def test_escalar_mensagem_sem_status():
         body = mock_post.call_args.kwargs["json"]
         assert "💬 Pós-venda\n" in body["text"]
         assert "Obrigado pelo produto!" in body["text"]
+
+
+# --- Isolamento de filesystem: Pendentes mockado ---
+
+def test_envia_mensagem_telegram_sem_tocar_disco():
+    """Escalador nao deve ler pendentes.json real — usa Pendentes mockado."""
+    with patch("agents.escalador.Pendentes") as mock_pendentes_cls, \
+         patch("agents.escalador.httpx.post") as mock_post:
+        mock_pendentes_cls.return_value = MagicMock()
+        mock_post.return_value = MagicMock(status_code=200)
+        escalador = Escalador()
+        escalador.escalar(*_make_cenario())
+    mock_post.assert_called_once()
+
+
+def test_mensagem_contem_codigo_e_texto_pendentes_mockados():
+    """Com Pendentes mockado, a notificacao no Telegram deve conter /r e o texto."""
+    with patch("agents.escalador.Pendentes") as mock_pendentes_cls, \
+         patch("agents.escalador.httpx.post") as mock_post:
+        mock_instance = MagicMock()
+        mock_instance.adicionar.return_value = 42
+        mock_pendentes_cls.return_value = mock_instance
+        mock_post.return_value = MagicMock(status_code=200)
+        escalador = Escalador()
+        escalador.escalar(*_make_cenario())
+    body = mock_post.call_args.kwargs["json"]
+    assert "/r " in body["text"]
+    assert "Produto com defeito" in body["text"]
+    import re
+    match = re.search(r"/r (\S+)", body["text"])
+    assert match and match.group(1).isdigit(), f"Codigo apos /r nao e inteiro: {body['text']}"

@@ -195,6 +195,36 @@ class MLClient:
         resp.raise_for_status()
         return resp.json()
 
+    def buscar_order_id_por_shipment(self, shipment_id: str) -> str:
+        """Busca order_id via GET /shipments/{id}/items.
+
+        Fallback para quando buscar_envio nao retorna order_id diretamente.
+        Retorna o order_id do primeiro item, ou string vazia se nao encontrado.
+        """
+        try:
+            resp = self._http.get(
+                f"/shipments/{shipment_id}/items",
+                headers=self._headers(),
+            )
+            if resp.status_code == 401:
+                self._renovar_token()
+                resp = self._http.get(
+                    f"/shipments/{shipment_id}/items",
+                    headers=self._headers(),
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("results", [])
+            if items:
+                order_id = items[0].get("order_id")
+                if order_id:
+                    return str(order_id)
+            log.warning(f"buscar_order_id_por_shipment: shipment={shipment_id} sem items ou order_id")
+            return ""
+        except Exception as e:
+            log.error(f"Erro ao buscar order_id do shipment {shipment_id}: {e}")
+            return ""
+
     # ID do agente de mensageria ML para Brasil (obrigatorio desde fev/2026)
     _ML_AGENT_ID = "3037675074"
 

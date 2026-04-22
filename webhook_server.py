@@ -1,12 +1,13 @@
 """Servidor webhook para receber notificacoes do Mercado Livre em tempo real."""
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -57,28 +58,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-ML_IPS_PERMITIDOS = {
-    "54.88.218.97",
-    "18.215.140.160",
-    "18.213.114.129",
-    "18.206.34.84",
-}
-
-class FiltroIPWebhook(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.method == "POST" and request.url.path == "/webhook":
-            forwarded_for = request.headers.get("X-Forwarded-For", "")
-            if forwarded_for:
-                ip = forwarded_for.split(",")[0].strip()
-            else:
-                ip = request.client.host if request.client else ""
-            if ip not in ML_IPS_PERMITIDOS:
-                log.warning(f"Webhook bloqueado — IP nao autorizado: {ip}")
-                return Response(content="Forbidden", status_code=403)
-        return await call_next(request)
-
-app.add_middleware(FiltroIPWebhook)
 
 
 @app.get("/")
@@ -145,11 +124,26 @@ async def ml_callback(request: Request):
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     """Recebe notificacoes do ML e processa em background."""
     payload = await request.json()
+    user_id = payload.get("user_id")
+    if user_id != int(config.ML_SELLER_ID):
+        log.warning(f"Webhook rejeitado — user_id invalido: {user_id} (esperado: {config.ML_SELLER_ID})")
+        return JSONResponse({"error": "user_id invalido"}, status_code=403)
+    notif_id = payload.get("_id")
+    if notif_id:
+        agora = time.time()
+        expirados = [k for k, v in _notificacoes_vistas.items() if agora - v > 300]
+        for k in expirados:
+            del _notificacoes_vistas[k]
+        if notif_id in _notificacoes_vistas:
+            log.info(f"Notificacao duplicada ignorada: _id={notif_id}")
+            return {"received": True}
+        _notificacoes_vistas[notif_id] = agora
     log.info(f"Webhook recebido: {payload}")
     background_tasks.add_task(processar_notificacao, payload)
     return {"received": True}
 
 
+_notificacoes_vistas: dict[str, float] = {}
 _debounce_tasks: dict[str, asyncio.Task] = {}
 
 
@@ -218,7 +212,10 @@ def _processar_shipment(shipment_id: str) -> None:
     try:
         envio = enviador._ml.buscar_envio(shipment_id)
         status = envio.get("status", "")
-        order_id = str(envio.get("order_id", ""))
+        order_id = enviador._ml.buscar_order_id_por_shipment(shipment_id)
+        if not order_id:
+            log.error(f"Impossivel obter order_id do shipment {shipment_id}, abortando")
+            return
         if status == "shipped":
             enviador.processar_envio(order_id, shipment_id)
         elif status == "delivered":
