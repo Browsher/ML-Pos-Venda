@@ -25,6 +25,9 @@ class Enviador:
                 return
             pack_id_str = str(pack_id)
             cap = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
+            if cap != CapStatus.DISPONIVEL:
+                self._enviar_por_cap(pack_id_str, "", cap, "compra", order_id)
+                return
             dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("compra", dados)
             self._enviar_por_cap(pack_id_str, mensagem, cap, "compra", order_id)
@@ -43,6 +46,9 @@ class Enviador:
                 return
             pack_id_str = str(pack_id)
             cap = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
+            if cap != CapStatus.DISPONIVEL:
+                self._enviar_por_cap(pack_id_str, "", cap, "envio", order_id)
+                return
             dados = self._extrair_dados_pedido(pedido, order_id)
             mensagem = self._gerador.gerar("envio", dados)
             self._enviar_por_cap(pack_id_str, mensagem, cap, "envio", order_id)
@@ -61,12 +67,19 @@ class Enviador:
                 return
             pack_id_str = str(pack_id)
             cap_other = self._ml.buscar_cap_disponivel(pack_id_str, "OTHER")
-            dados = self._extrair_dados_pedido(pedido, order_id)
-            mensagem = self._gerador.gerar("entrega", dados)
             if cap_other == CapStatus.INDISPONIVEL:
                 cap_invoice = self._ml.buscar_cap_disponivel(pack_id_str, "SEND_INVOICE_LINK")
+                if cap_invoice != CapStatus.DISPONIVEL:
+                    self._enviar_por_cap(pack_id_str, "", cap_invoice, "entrega", order_id, "SEND_INVOICE_LINK")
+                    return
+                dados = self._extrair_dados_pedido(pedido, order_id)
+                mensagem = self._gerador.gerar("entrega", dados)
                 self._enviar_por_cap(pack_id_str, mensagem, cap_invoice, "entrega", order_id, "SEND_INVOICE_LINK")
+            elif cap_other != CapStatus.DISPONIVEL:
+                self._enviar_por_cap(pack_id_str, "", cap_other, "entrega", order_id)
             else:
+                dados = self._extrair_dados_pedido(pedido, order_id)
+                mensagem = self._gerador.gerar("entrega", dados)
                 self._enviar_por_cap(pack_id_str, mensagem, cap_other, "entrega", order_id, "OTHER")
         except Exception as e:
             log.error(f"Erro ao processar entrega {order_id}: {e}")

@@ -157,3 +157,29 @@ def test_processar_entrega_other_indisponivel_invoice_indisponivel_pula():
     env.processar_entrega("777")
     env._ml.enviar_followup.assert_not_called()
     env._ml.responder_mensagem.assert_not_called()
+
+
+# --- Otimizacao: gerar nao chamado quando CAP indisponivel ---
+
+def test_gerar_nao_chamado_quando_compra_cap_indisponivel():
+    """Nao deve chamar Claude se CAP nao esta disponivel para compra."""
+    env = _make_enviador(pack_id=888, order_id="777")
+    env._ml.buscar_cap_disponivel.return_value = CapStatus.INDISPONIVEL
+    env.processar_compra("777")
+    env._gerador.gerar.assert_not_called()
+
+
+def test_gerar_nao_chamado_quando_envio_cap_acesso_negado():
+    """Nao deve chamar Claude se CAP retorna acesso negado para envio."""
+    env = _make_enviador(pack_id=888, order_id="777")
+    env._ml.buscar_cap_disponivel.return_value = CapStatus.ACESSO_NEGADO
+    env.processar_envio("777", "ship_x")
+    env._gerador.gerar.assert_not_called()
+
+
+def test_gerar_nao_chamado_quando_entrega_ambos_caps_indisponiveis():
+    """Nao deve chamar Claude se OTHER e SEND_INVOICE_LINK ambos indisponiveis."""
+    env = _make_enviador(pack_id=888, order_id="777")
+    env._ml.buscar_cap_disponivel.return_value = CapStatus.INDISPONIVEL
+    env.processar_entrega("777")
+    env._gerador.gerar.assert_not_called()
